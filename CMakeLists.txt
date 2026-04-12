@@ -9,12 +9,14 @@ find_package(glm REQUIRED)
 add_executable(SplatApp
     src/main.cpp
     src/shader.cpp
+    src/stb_image.cpp
     external/glad/src/glad.c
 )
 
 target_include_directories(SplatApp PRIVATE
     include
     external/glad/include
+    external/stb
 )
 
 target_link_libraries(SplatApp PRIVATE glfw glm::glm)
