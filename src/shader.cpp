@@ -1,5 +1,6 @@
 #include "shader.hpp"
 #include <glad/glad.h>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <fstream>
 #include <iostream>
@@ -77,6 +78,11 @@ void Shader::setFloat(const std::string &name, float value) const {
 void Shader::setVec3(const std::string &name, float v0, float v1, float v2) const {
   glUniform3f(glGetUniformLocation(ID, name.c_str()), v0, v1, v2);
 }
+
+void Shader::setMat4(const std::string &name, const glm::mat4& m) const {
+      glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, glm::value_ptr(m));
+}
+
 
 // utility function for checking shader compilation/linking errors.
 // ------------------------------------------------------------------------
