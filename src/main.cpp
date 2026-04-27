@@ -21,6 +21,8 @@ void processInput(GLFWwindow *window);
 // settings
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
+int framebufferWidth = SCR_WIDTH;
+int framebufferHeight = SCR_HEIGHT;
 
 // camera
 Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
@@ -98,6 +100,9 @@ int main() {
     glfwTerminate();
     return -1;
   }
+
+  glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+  glViewport(0, 0, framebufferWidth, framebufferHeight);
 
   glEnable(GL_DEPTH_TEST);
 
@@ -185,7 +190,7 @@ int main() {
 
   lastFrame = glfwGetTime();
   float modelRotationAngle = 0.0f;
-  
+
   while (!glfwWindowShouldClose(window)) {
     float currentFrame = static_cast<float>(glfwGetTime());
     deltaTime = currentFrame - lastFrame;
@@ -207,9 +212,12 @@ int main() {
 
     // pass projection matrix to shader (note that in this case it could change
     // every frame)
+    const float aspectRatio = framebufferHeight > 0
+                                  ? static_cast<float>(framebufferWidth) /
+                                        static_cast<float>(framebufferHeight)
+                                  : 1.0f;
     glm::mat4 projection =
-        glm::perspective(glm::radians(camera.Zoom),
-                         (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+        glm::perspective(glm::radians(camera.Zoom), aspectRatio, 0.1f, 100.0f);
     ourShader.setMat4("projection", projection);
 
     // camera/view transformation
@@ -266,6 +274,8 @@ void processInput(GLFWwindow *window) {
 // function executes
 // ---------------------------------------------------------------------------------------------
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
+  framebufferWidth = width;
+  framebufferHeight = height;
   // make sure the viewport matches the new window dimensions; note that width
   // and height will be significantly larger than specified on retina displays.
   glViewport(0, 0, width, height);
