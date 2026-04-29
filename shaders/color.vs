@@ -13,5 +13,7 @@ void main() {
     gl_Position = projection * view * model * vec4(aPos, 1.0);
     // object's world position
     FragPos = vec3(model * vec4(aPos, 1.0));
-    Normal = aNormal;
+    // this will break in case of non-uniform transformation (e.g. shear)
+    // normal will be not perpendicular to the surface anymore
+    Normal = vec3(model * vec4(aNormal, 0.0));
 }
