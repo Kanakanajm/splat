@@ -15,5 +15,9 @@ void main() {
     FragPos = vec3(model * vec4(aPos, 1.0));
     // this will break in case of non-uniform transformation (e.g. shear)
     // normal will be not perpendicular to the surface anymore
-    Normal = vec3(model * vec4(aNormal, 0.0));
+    // Normal = vec3(model * vec4(aNormal, 0.0));
+    // the correct way
+    // see https://www.lighthouse3d.com/tutorials/glsl-12-tutorial/the-normal-matrix/
+    Normal = mat3(transpose(inverse(model))) * aNormal;
+
 }
