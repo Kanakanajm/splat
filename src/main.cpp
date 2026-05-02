@@ -17,6 +17,8 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window);
+// callback when mouseLookEnabled changes
+void setMouseLook(GLFWwindow *window, bool enabled);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -29,6 +31,7 @@ Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
+bool mouseLookEnabled = false;
 
 // timing
 float deltaTime = 0.0f; // time between current frame and last frame
@@ -237,6 +240,13 @@ void processInput(GLFWwindow *window) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     glfwSetWindowShouldClose(window, true);
 
+  // user may hold down right click to enable camera look around
+  bool wantsMouseLook =
+      glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+  if (wantsMouseLook != mouseLookEnabled) {
+    setMouseLook(window, wantsMouseLook);
+  }
+
   if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
     camera.ProcessKeyboard(FORWARD, deltaTime);
   if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -258,6 +268,20 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   glViewport(0, 0, width, height);
 }
 
+void setMouseLook(GLFWwindow *window, bool enabled) {
+  mouseLookEnabled = enabled;
+  firstMouse = true;
+
+  // hide cursor in mouse look mode to prevent mouse position failing to update when hitting window border
+  glfwSetInputMode(window, GLFW_CURSOR,
+                   enabled ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+
+  if (glfwRawMouseMotionSupported()) {
+    glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION,
+                     enabled ? GLFW_TRUE : GLFW_FALSE);
+  }
+}
+
 // glfw: whenever the mouse moves, this callback is called
 // -------------------------------------------------------
 void mouse_callback(GLFWwindow *window, double xposIn, double yposIn) {
@@ -276,6 +300,10 @@ void mouse_callback(GLFWwindow *window, double xposIn, double yposIn) {
 
   lastX = xpos;
   lastY = ypos;
+
+  if (!mouseLookEnabled) {
+    return;
+  }
 
   camera.ProcessMouseMovement(xoffset, yoffset);
 }
