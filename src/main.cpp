@@ -196,6 +196,7 @@ int main() {
 
     glm::mat4 model = glm::mat4(1.0f);
     lightingShader.setMat4("model", model);
+    lightingShader.setVec3("viewPos", camera.Position.x, camera.Position.y, camera.Position.z); 
 
     glBindVertexArray(VAO);
 
