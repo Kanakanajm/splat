@@ -8,16 +8,26 @@ find_package(glm REQUIRED)
 
 add_executable(SplatApp
     src/main.cpp
+    src/debug_ui.cpp
     src/shader.cpp
     src/camera.cpp
     src/stb_image.cpp
     external/glad/src/glad.c
+    external/imgui/imgui.cpp
+    external/imgui/imgui_demo.cpp
+    external/imgui/imgui_draw.cpp
+    external/imgui/imgui_tables.cpp
+    external/imgui/imgui_widgets.cpp
+    external/imgui/backends/imgui_impl_glfw.cpp
+    external/imgui/backends/imgui_impl_opengl3.cpp
 )
 
 target_include_directories(SplatApp PRIVATE
     include
     external/glad/include
     external/stb
+    external/imgui
+    external/imgui/backends
 )
 
 target_link_libraries(SplatApp PRIVATE glfw glm::glm)
