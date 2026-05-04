@@ -242,19 +242,19 @@ int main() {
 
     glBindVertexArray(VAO);
 
-    for (unsigned int i = 0; i < 10; i++) {
-      // model/object to world
-      glm::mat4 model = glm::mat4(1.0f);
-      model = glm::translate(model, cubePositions[i]);
-      if (i % 3 == 0) {
-        model =
-            glm::rotate(model, modelRotationAngle, glm::vec3(0.5f, 1.0f, 0.0f));
-      }
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::scale(model, glm::vec3(2.0f));
+    ourShader.setMat4("model", model);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
 
-      // model = glm::scale(model, glm::vec3(0.5f, 0.5f, 0.5f));
-      ourShader.setMat4("model", model);
-      glDrawArrays(GL_TRIANGLES, 0, 36);
-    }
+    model = glm::mat4(1.0f);
+    ourShader.setMat4("model", model);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    model = glm::mat4(1.0f);
+    model = glm::scale(model, glm::vec3(0.5f));
+    ourShader.setMat4("model", model);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
 
     glBindVertexArray(0);
 
