@@ -10,13 +10,15 @@
 
 #include "shader.hpp"
 #include "camera.hpp"
+#include "debug_ui.hpp"
 #include "stb_image.h"
 #include <iostream>
+#include <memory>
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
-void processInput(GLFWwindow *window);
+void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard);
 // callback when mouseLookEnabled changes
 void setMouseLook(GLFWwindow *window, bool enabled);
 
@@ -32,6 +34,7 @@ float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
 bool mouseLookEnabled = false;
+bool uiWantsMouse = false;
 
 // timing
 float deltaTime = 0.0f; // time between current frame and last frame
@@ -104,10 +107,15 @@ int main() {
     return -1;
   }
 
+  bool vsyncEnabled = true;
+  glfwSwapInterval(vsyncEnabled ? 1 : 0);
+
   glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
   glViewport(0, 0, framebufferWidth, framebufferHeight);
 
   glEnable(GL_DEPTH_TEST);
+
+  auto debugUi = std::make_unique<DebugUi>(window);
 
   Shader ourShader("shaders/shader.vs", "shaders/shader.fs");
 
@@ -199,9 +207,14 @@ int main() {
     deltaTime = currentFrame - lastFrame;
     lastFrame = currentFrame;
 
+    glfwPollEvents();
+    debugUi->beginFrame();
+    uiWantsMouse = debugUi->wantsMouse();
+    const bool uiWantsKeyboard = debugUi->wantsKeyboard();
+
     modelRotationAngle += glm::radians(40.0f) * deltaTime;
 
-    processInput(window);
+    processInput(window, uiWantsMouse, uiWantsKeyboard);
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -245,9 +258,15 @@ int main() {
 
     glBindVertexArray(0);
 
+    if (debugUi->draw(camera, vsyncEnabled)) {
+      glfwSwapInterval(vsyncEnabled ? 1 : 0);
+    }
+    debugUi->endFrame();
+
     glfwSwapBuffers(window);
-    glfwPollEvents();
   }
+
+  debugUi.reset();
 
   glDeleteVertexArrays(1, &VAO);
   glDeleteBuffers(1, &VBO);
@@ -259,15 +278,21 @@ int main() {
 // process all input: query GLFW whether relevant keys are pressed/released this
 // frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
-void processInput(GLFWwindow *window) {
+void processInput(GLFWwindow *window, bool uiWantsMouse,
+                  bool uiWantsKeyboard) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     glfwSetWindowShouldClose(window, true);
 
   // user may hold down right click to enable camera look around
   bool wantsMouseLook =
+      !uiWantsMouse &&
       glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
   if (wantsMouseLook != mouseLookEnabled) {
     setMouseLook(window, wantsMouseLook);
+  }
+
+  if (uiWantsMouse || uiWantsKeyboard) {
+    return;
   }
 
   if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
@@ -334,5 +359,9 @@ void mouse_callback(GLFWwindow *window, double xposIn, double yposIn) {
 // glfw: whenever the mouse scroll wheel scrolls, this callback is called
 // ----------------------------------------------------------------------
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
+  if (uiWantsMouse) {
+    return;
+  }
+
   camera.ProcessMouseScroll(static_cast<float>(yoffset));
 }
