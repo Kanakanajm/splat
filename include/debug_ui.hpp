@@ -12,7 +12,7 @@ public:
   DebugUi &operator=(const DebugUi &) = delete;
 
   void beginFrame();
-  void draw(const Camera &camera, float deltaTime);
+  bool draw(const Camera &camera, bool &vsyncEnabled);
   void endFrame();
 
   bool wantsMouse() const;

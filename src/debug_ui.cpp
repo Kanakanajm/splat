@@ -32,27 +32,25 @@ void DebugUi::beginFrame() {
   ImGui::NewFrame();
 }
 
-void DebugUi::draw(const Camera &camera, float deltaTime) {
+bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled) {
   if (showDemoWindow) {
     ImGui::ShowDemoWindow(&showDemoWindow);
   }
 
   const ImGuiIO &io = ImGui::GetIO();
-  const float imguiFrameTimeMs =
-      io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f;
 
   ImGui::Begin("Debug");
   ImGui::Text("FPS: %.1f", io.Framerate);
-  ImGui::Text("Frame time: %.3f ms", imguiFrameTimeMs);
-  ImGui::Text("App deltaTime: %.6f s", deltaTime);
+  const bool vsyncChanged = ImGui::Checkbox("VSync", &vsyncEnabled);
   ImGui::Separator();
   ImGui::Text("Camera position: %.2f, %.2f, %.2f", camera.Position.x,
               camera.Position.y, camera.Position.z);
-  ImGui::Text("Camera pitch: %.2f deg", camera.Pitch);
-  ImGui::Text("Camera yaw: %.2f deg", camera.Yaw);
+  ImGui::Text("Camera pitch & yaw: %.2f, %.2f deg", camera.Pitch,  camera.Yaw);
   ImGui::Text("Camera zoom: %.2f", camera.Zoom);
   ImGui::Checkbox("Show ImGui demo", &showDemoWindow);
   ImGui::End();
+
+  return vsyncChanged;
 }
 
 void DebugUi::endFrame() {

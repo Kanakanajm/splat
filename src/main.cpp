@@ -107,6 +107,9 @@ int main() {
     return -1;
   }
 
+  bool vsyncEnabled = true;
+  glfwSwapInterval(vsyncEnabled ? 1 : 0);
+
   glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
   glViewport(0, 0, framebufferWidth, framebufferHeight);
 
@@ -255,7 +258,9 @@ int main() {
 
     glBindVertexArray(0);
 
-    debugUi->draw(camera, deltaTime);
+    if (debugUi->draw(camera, vsyncEnabled)) {
+      glfwSwapInterval(vsyncEnabled ? 1 : 0);
+    }
     debugUi->endFrame();
 
     glfwSwapBuffers(window);
