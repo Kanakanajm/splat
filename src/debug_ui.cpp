@@ -32,7 +32,8 @@ void DebugUi::beginFrame() {
   ImGui::NewFrame();
 }
 
-bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled) {
+bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled, float &clipNear,
+                   float &clipFar, bool &showPeeledLayer, bool &showDepth) {
   if (showDemoWindow) {
     ImGui::ShowDemoWindow(&showDemoWindow);
   }
@@ -47,6 +48,12 @@ bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled) {
               camera.Position.y, camera.Position.z);
   ImGui::Text("Camera pitch & yaw: %.2f, %.2f deg", camera.Pitch,  camera.Yaw);
   ImGui::Text("Camera zoom: %.2f", camera.Zoom);
+  ImGui::Separator();
+  ImGui::SliderFloat("Near", &clipNear, 0.01f, 10.0f);
+  ImGui::SliderFloat("Far", &clipFar, 1.0f, 200.0f);
+  ImGui::Separator();
+  ImGui::Checkbox("Show peeled layer", &showPeeledLayer);
+  ImGui::Checkbox("Show depth", &showDepth);
   ImGui::Checkbox("Show ImGui demo", &showDemoWindow);
   ImGui::End();
 

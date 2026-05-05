@@ -12,7 +12,8 @@ public:
   DebugUi &operator=(const DebugUi &) = delete;
 
   void beginFrame();
-  bool draw(const Camera &camera, bool &vsyncEnabled);
+  bool draw(const Camera &camera, bool &vsyncEnabled, float &clipNear,
+            float &clipFar, bool &showPeeledLayer, bool &showDepth);
   void endFrame();
 
   bool wantsMouse() const;

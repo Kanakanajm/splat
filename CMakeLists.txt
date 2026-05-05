@@ -9,6 +9,7 @@ find_package(glm REQUIRED)
 add_executable(SplatApp
     src/main.cpp
     src/debug_ui.cpp
+    src/framebuffer.cpp
     src/shader.cpp
     src/camera.cpp
     src/stb_image.cpp

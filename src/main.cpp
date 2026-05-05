@@ -11,6 +11,7 @@
 #include "shader.hpp"
 #include "camera.hpp"
 #include "debug_ui.hpp"
+#include "framebuffer.hpp"
 #include "stb_image.h"
 #include <iostream>
 #include <memory>
@@ -19,6 +20,7 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard);
+void drawThreeCubes(Shader &shader, unsigned int VAO);
 // callback when mouseLookEnabled changes
 void setMouseLook(GLFWwindow *window, bool enabled);
 
@@ -77,6 +79,13 @@ glm::vec3 cubePositions[] = {
 //     1, 2, 3  // second triangle
 // };
 
+float screenQuadVertices[] = {
+    // positions   // tex coords
+    -1.0f, 1.0f, 0.0f, 1.0f, -1.0f, -1.0f, 0.0f, 0.0f, 1.0f, -1.0f, 1.0f, 0.0f,
+
+    -1.0f, 1.0f, 0.0f, 1.0f, 1.0f,  -1.0f, 1.0f, 0.0f, 1.0f, 1.0f,  1.0f, 1.0f,
+};
+
 int main() {
   if (!glfwInit()) {
     std::cerr << "GLFW init failed\n";
@@ -108,6 +117,11 @@ int main() {
   }
 
   bool vsyncEnabled = true;
+  float clipNear = 0.1f;
+  float clipFar = 10.0f;
+  bool showPeeledLayer = false;
+  bool showDepth = false;
+
   glfwSwapInterval(vsyncEnabled ? 1 : 0);
 
   glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
@@ -117,7 +131,37 @@ int main() {
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
+  Framebuffer firstLayerFbo(framebufferWidth, framebufferHeight);
+  Framebuffer secondLayerFbo(framebufferWidth, framebufferHeight);
+
   Shader ourShader("shaders/shader.vs", "shaders/shader.fs");
+  Shader depthPeelShader("shaders/shader.vs", "shaders/depth_peel.fs");
+  Shader depthShader("shaders/depth.vs", "shaders/depth.fs");
+
+  unsigned int screenQuadVAO;
+  unsigned int screenQuadVBO;
+
+  glGenVertexArrays(1, &screenQuadVAO);
+  glGenBuffers(1, &screenQuadVBO);
+
+  glBindVertexArray(screenQuadVAO);
+
+  glBindBuffer(GL_ARRAY_BUFFER, screenQuadVBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(screenQuadVertices), screenQuadVertices,
+               GL_STATIC_DRAW);
+
+  // location 0: vec2 position
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)0);
+  glEnableVertexAttribArray(0);
+
+  // location 1: vec2 tex coord
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                        (void *)(2 * sizeof(float)));
+  glEnableVertexAttribArray(1);
+
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+  glBindVertexArray(0);
 
   unsigned int VAO;
   glGenVertexArrays(1, &VAO);
@@ -196,11 +240,18 @@ int main() {
   ourShader.setInt("texture1", 0);
   ourShader.setInt("texture2", 1);
 
+  depthPeelShader.use();
+  depthPeelShader.setInt("texture1", 0);
+  depthPeelShader.setInt("texture2", 1);
+  depthPeelShader.setInt("previousDepth", 2);
+
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
   // glPointSize(50.0f);
 
   lastFrame = glfwGetTime();
   float modelRotationAngle = 0.0f;
+
+  // MARK: R-LOOP
 
   while (!glfwWindowShouldClose(window)) {
     float currentFrame = static_cast<float>(glfwGetTime());
@@ -216,6 +267,24 @@ int main() {
 
     processInput(window, uiWantsMouse, uiWantsKeyboard);
 
+    firstLayerFbo.resize(framebufferWidth, framebufferHeight);
+    secondLayerFbo.resize(framebufferWidth, framebufferHeight);
+
+    const float aspectRatio = framebufferHeight > 0
+                                  ? static_cast<float>(framebufferWidth) /
+                                        static_cast<float>(framebufferHeight)
+                                  : 1.0f;
+    glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
+                                            aspectRatio, clipNear, clipFar);
+    glm::mat4 view = camera.GetViewMatrix();
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+
+    // Pass 1: render the closest visible layer.
+    firstLayerFbo.bind();
+
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -225,40 +294,62 @@ int main() {
     glBindTexture(GL_TEXTURE_2D, texture2);
 
     ourShader.use();
-
-    // pass projection matrix to shader (note that in this case it could change
-    // every frame)
-    const float aspectRatio = framebufferHeight > 0
-                                  ? static_cast<float>(framebufferWidth) /
-                                        static_cast<float>(framebufferHeight)
-                                  : 1.0f;
-    glm::mat4 projection =
-        glm::perspective(glm::radians(camera.Zoom), aspectRatio, 0.1f, 100.0f);
     ourShader.setMat4("projection", projection);
-
-    // camera/view transformation
-    glm::mat4 view = camera.GetViewMatrix();
     ourShader.setMat4("view", view);
+    drawThreeCubes(ourShader, VAO);
 
-    glBindVertexArray(VAO);
+    // Pass 2: render the nearest fragments behind the first layer.
+    secondLayerFbo.bind();
 
-    glm::mat4 model = glm::mat4(1.0f);
-    model = glm::scale(model, glm::vec3(2.0f));
-    ourShader.setMat4("model", model);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    model = glm::mat4(1.0f);
-    ourShader.setMat4("model", model);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture1);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, texture2);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, firstLayerFbo.depthTexture());
 
-    model = glm::mat4(1.0f);
-    model = glm::scale(model, glm::vec3(0.5f));
-    ourShader.setMat4("model", model);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+    depthPeelShader.use();
+    depthPeelShader.setFloat("peelEpsilon", 0.00001f);
+    depthPeelShader.setMat4("projection", projection);
+    depthPeelShader.setMat4("view", view);
+    drawThreeCubes(depthPeelShader, VAO);
 
-    glBindVertexArray(0);
+    const Framebuffer &displayFbo =
+        showPeeledLayer ? secondLayerFbo : firstLayerFbo;
 
-    if (debugUi->draw(camera, vsyncEnabled)) {
+    Framebuffer::bindDefault();
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    if (showDepth) {
+      glDisable(GL_DEPTH_TEST);
+
+      depthShader.use();
+      depthShader.setInt("depthTex", 0);
+      depthShader.setFloat("nearPlane", clipNear);
+      depthShader.setFloat("farPlane", clipFar);
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, displayFbo.depthTexture());
+
+      glBindVertexArray(screenQuadVAO);
+      glDrawArrays(GL_TRIANGLES, 0, 6);
+      glBindVertexArray(0);
+
+      glEnable(GL_DEPTH_TEST);
+    } else {
+      glBindFramebuffer(GL_READ_FRAMEBUFFER, displayFbo.id());
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+      glBlitFramebuffer(0, 0, displayFbo.width(), displayFbo.height(), 0, 0,
+                        framebufferWidth, framebufferHeight,
+                        GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      Framebuffer::bindDefault();
+    }
+
+    if (debugUi->draw(camera, vsyncEnabled, clipNear, clipFar, showPeeledLayer,
+                      showDepth)) {
       glfwSwapInterval(vsyncEnabled ? 1 : 0);
     }
     debugUi->endFrame();
@@ -268,8 +359,12 @@ int main() {
 
   debugUi.reset();
 
+  firstLayerFbo.destroy();
+  secondLayerFbo.destroy();
   glDeleteVertexArrays(1, &VAO);
   glDeleteBuffers(1, &VBO);
+  glDeleteVertexArrays(1, &screenQuadVAO);
+  glDeleteBuffers(1, &screenQuadVBO);
   glfwDestroyWindow(window);
   glfwTerminate();
   return 0;
@@ -278,8 +373,7 @@ int main() {
 // process all input: query GLFW whether relevant keys are pressed/released this
 // frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
-void processInput(GLFWwindow *window, bool uiWantsMouse,
-                  bool uiWantsKeyboard) {
+void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     glfwSetWindowShouldClose(window, true);
 
@@ -305,6 +399,26 @@ void processInput(GLFWwindow *window, bool uiWantsMouse,
     camera.ProcessKeyboard(RIGHT, deltaTime);
 }
 
+void drawThreeCubes(Shader &shader, unsigned int VAO) {
+  glBindVertexArray(VAO);
+
+  glm::mat4 model = glm::mat4(1.0f);
+  model = glm::scale(model, glm::vec3(2.0f));
+  shader.setMat4("model", model);
+  glDrawArrays(GL_TRIANGLES, 0, 36);
+
+  model = glm::mat4(1.0f);
+  shader.setMat4("model", model);
+  glDrawArrays(GL_TRIANGLES, 0, 36);
+
+  model = glm::mat4(1.0f);
+  model = glm::scale(model, glm::vec3(0.5f));
+  shader.setMat4("model", model);
+  glDrawArrays(GL_TRIANGLES, 0, 36);
+
+  glBindVertexArray(0);
+}
+
 // glfw: whenever the window size changed (by OS or user resize) this callback
 // function executes
 // ---------------------------------------------------------------------------------------------
@@ -320,7 +434,8 @@ void setMouseLook(GLFWwindow *window, bool enabled) {
   mouseLookEnabled = enabled;
   firstMouse = true;
 
-  // hide cursor in mouse look mode to prevent mouse position failing to update when hitting window border
+  // hide cursor in mouse look mode to prevent mouse position failing to update
+  // when hitting window border
   glfwSetInputMode(window, GLFW_CURSOR,
                    enabled ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 
