@@ -14,6 +14,8 @@
 #include "framebuffer.hpp"
 #include "stb_image.h"
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <vector>
@@ -22,7 +24,10 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard);
-void drawThreeCubes(Shader &shader, unsigned int VAO);
+void drawThreeCubes(Shader &shader, unsigned int VAO,
+                    const std::array<int, 3> &mediumIds);
+void drawPlane(Shader &shader, unsigned int VAO);
+glm::mat4 makePlaneModel(const glm::vec3 &normal, float offset, float scale);
 // callback when mouseLookEnabled changes
 void setMouseLook(GLFWwindow *window, bool enabled);
 
@@ -77,6 +82,11 @@ glm::vec3 cubePositions[] = {
     glm::vec3(1.3f, -2.0f, -2.5f),  glm::vec3(1.5f, 2.0f, -2.5f),
     glm::vec3(1.5f, 0.2f, -1.5f),   glm::vec3(-1.3f, 1.0f, -1.5f)};
 
+struct HomogeneousMedium {
+  int id;
+  float attenuationCoefficient;
+};
+
 // unsigned int indices[] = {
 //     0, 1, 3, // first triangle
 //     1, 2, 3  // second triangle
@@ -87,6 +97,12 @@ float screenQuadVertices[] = {
     -1.0f, 1.0f, 0.0f, 1.0f, -1.0f, -1.0f, 0.0f, 0.0f, 1.0f, -1.0f, 1.0f, 0.0f,
 
     -1.0f, 1.0f, 0.0f, 1.0f, 1.0f,  -1.0f, 1.0f, 0.0f, 1.0f, 1.0f,  1.0f, 1.0f,
+};
+
+float planeVertices[] = {
+    -0.5f, -0.5f, 0.0f, 0.5f,  -0.5f, 0.0f, 0.5f, 0.5f, 0.0f,
+
+    -0.5f, -0.5f, 0.0f, 0.5f,  0.5f,  0.0f, -0.5f, 0.5f, 0.0f,
 };
 
 int main() {
@@ -124,7 +140,20 @@ int main() {
   float clipFar = 10.0f;
   int selectedPeelLayer = 0;
   int generatedLayerCount = 1;
-  bool showDepth = false;
+  int displayMode = 0;
+  glm::vec3 planeNormal(0.0f, 0.0f, 1.0f);
+  float planeOffset = 0.0f;
+  float planeScale = 2.0f;
+  const std::array<HomogeneousMedium, 3> cubeMedia = {
+      HomogeneousMedium{1, 0.25f},
+      HomogeneousMedium{2, 0.6f},
+      HomogeneousMedium{3, 1.0f},
+  };
+  const std::array<int, 3> cubeMediumIds = {
+      cubeMedia[0].id,
+      cubeMedia[1].id,
+      cubeMedia[2].id,
+  };
 
   glfwSwapInterval(vsyncEnabled ? 1 : 0);
 
@@ -147,6 +176,8 @@ int main() {
   Shader ourShader("shaders/shader.vs", "shaders/shader.fs");
   Shader depthPeelShader("shaders/shader.vs", "shaders/depth_peel.fs");
   Shader depthShader("shaders/depth.vs", "shaders/depth.fs");
+  Shader mediumDebugShader("shaders/depth.vs", "shaders/medium_debug.fs");
+  Shader flatColorShader("shaders/flat_color.vs", "shaders/flat_color.fs");
 
   unsigned int screenQuadVAO;
   unsigned int screenQuadVBO;
@@ -171,6 +202,24 @@ int main() {
 
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+  glBindVertexArray(0);
+
+  unsigned int planeVAO;
+  unsigned int planeVBO;
+
+  glGenVertexArrays(1, &planeVAO);
+  glGenBuffers(1, &planeVBO);
+
+  glBindVertexArray(planeVAO);
+
+  glBindBuffer(GL_ARRAY_BUFFER, planeVBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(planeVertices), planeVertices,
+               GL_STATIC_DRAW);
+
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+  glEnableVertexAttribArray(0);
+
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
 
   unsigned int VAO;
@@ -296,9 +345,7 @@ int main() {
 
     // Layer 0: render the closest visible layer.
     peelLayers[0].bind();
-
-    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    peelLayers[0].clear(0.2f, 0.3f, 0.3f, 1.0f);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture1);
@@ -308,14 +355,12 @@ int main() {
     ourShader.use();
     ourShader.setMat4("projection", projection);
     ourShader.setMat4("view", view);
-    drawThreeCubes(ourShader, VAO);
+    drawThreeCubes(ourShader, VAO, cubeMediumIds);
 
     generatedLayerCount = 1;
     for (int layer = 1; layer < maxPeelLayers; ++layer) {
       peelLayers[layer].bind();
-
-      glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      peelLayers[layer].clear(0.2f, 0.3f, 0.3f, 1.0f);
 
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, texture1);
@@ -330,7 +375,7 @@ int main() {
       depthPeelShader.setMat4("view", view);
 
       glBeginQuery(GL_ANY_SAMPLES_PASSED, peelQuery);
-      drawThreeCubes(depthPeelShader, VAO);
+      drawThreeCubes(depthPeelShader, VAO, cubeMediumIds);
       glEndQuery(GL_ANY_SAMPLES_PASSED);
 
       unsigned int anySamplesPassed = GL_FALSE;
@@ -349,7 +394,7 @@ int main() {
     Framebuffer::bindDefault();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    if (showDepth) {
+    if (displayMode == 1) {
       glDisable(GL_DEPTH_TEST);
 
       depthShader.use();
@@ -365,17 +410,41 @@ int main() {
       glBindVertexArray(0);
 
       glEnable(GL_DEPTH_TEST);
+    } else if (displayMode == 2) {
+      glDisable(GL_DEPTH_TEST);
+
+      mediumDebugShader.use();
+      mediumDebugShader.setInt("mediumTex", 0);
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, displayFbo.mediumTexture());
+
+      glBindVertexArray(screenQuadVAO);
+      glDrawArrays(GL_TRIANGLES, 0, 6);
+      glBindVertexArray(0);
+
+      glEnable(GL_DEPTH_TEST);
     } else {
       glBindFramebuffer(GL_READ_FRAMEBUFFER, displayFbo.id());
+      glReadBuffer(GL_COLOR_ATTACHMENT0);
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
       glBlitFramebuffer(0, 0, displayFbo.width(), displayFbo.height(), 0, 0,
                         framebufferWidth, framebufferHeight,
                         GL_COLOR_BUFFER_BIT, GL_NEAREST);
       Framebuffer::bindDefault();
+
+      flatColorShader.use();
+      flatColorShader.setMat4("projection", projection);
+      flatColorShader.setMat4("view", view);
+      flatColorShader.setMat4(
+          "model", makePlaneModel(planeNormal, planeOffset, planeScale));
+      flatColorShader.setVec3("objectColor", 0.1f, 0.8f, 0.9f);
+      drawPlane(flatColorShader, planeVAO);
     }
 
     if (debugUi->draw(camera, vsyncEnabled, clipNear, clipFar,
-                      selectedPeelLayer, generatedLayerCount, showDepth)) {
+                      selectedPeelLayer, generatedLayerCount, displayMode,
+                      planeNormal, planeOffset, planeScale)) {
       glfwSwapInterval(vsyncEnabled ? 1 : 0);
     }
     debugUi->endFrame();
@@ -393,6 +462,8 @@ int main() {
   glDeleteBuffers(1, &VBO);
   glDeleteVertexArrays(1, &screenQuadVAO);
   glDeleteBuffers(1, &screenQuadVBO);
+  glDeleteVertexArrays(1, &planeVAO);
+  glDeleteBuffers(1, &planeVBO);
   glfwDestroyWindow(window);
   glfwTerminate();
   return 0;
@@ -427,24 +498,57 @@ void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard) {
     camera.ProcessKeyboard(RIGHT, deltaTime);
 }
 
-void drawThreeCubes(Shader &shader, unsigned int VAO) {
+void drawThreeCubes(Shader &shader, unsigned int VAO,
+                    const std::array<int, 3> &mediumIds) {
   glBindVertexArray(VAO);
 
   glm::mat4 model = glm::mat4(1.0f);
   model = glm::scale(model, glm::vec3(2.0f));
   shader.setMat4("model", model);
+  shader.setInt("mediumId", mediumIds[0]);
   glDrawArrays(GL_TRIANGLES, 0, 36);
 
   model = glm::mat4(1.0f);
   shader.setMat4("model", model);
+  shader.setInt("mediumId", mediumIds[1]);
   glDrawArrays(GL_TRIANGLES, 0, 36);
 
   model = glm::mat4(1.0f);
   model = glm::scale(model, glm::vec3(0.5f));
   shader.setMat4("model", model);
+  shader.setInt("mediumId", mediumIds[2]);
   glDrawArrays(GL_TRIANGLES, 0, 36);
 
   glBindVertexArray(0);
+}
+
+void drawPlane(Shader &shader, unsigned int VAO) {
+  glBindVertexArray(VAO);
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+  glBindVertexArray(0);
+}
+
+glm::mat4 makePlaneModel(const glm::vec3 &normal, float offset, float scale) {
+  glm::vec3 n = normal;
+  if (glm::length(n) < 0.0001f) {
+    n = glm::vec3(0.0f, 0.0f, 1.0f);
+  } else {
+    n = glm::normalize(n);
+  }
+
+  const glm::vec3 helper =
+      std::abs(n.y) < 0.99f ? glm::vec3(0.0f, 1.0f, 0.0f)
+                            : glm::vec3(1.0f, 0.0f, 0.0f);
+  const glm::vec3 tangent = glm::normalize(glm::cross(helper, n));
+  const glm::vec3 bitangent = glm::cross(n, tangent);
+  const glm::vec3 position = n * offset;
+
+  glm::mat4 model(1.0f);
+  model[0] = glm::vec4(tangent * scale, 0.0f);
+  model[1] = glm::vec4(bitangent * scale, 0.0f);
+  model[2] = glm::vec4(n, 0.0f);
+  model[3] = glm::vec4(position, 1.0f);
+  return model;
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback

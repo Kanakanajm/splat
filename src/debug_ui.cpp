@@ -34,7 +34,9 @@ void DebugUi::beginFrame() {
 
 bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled, float &clipNear,
                    float &clipFar, int &selectedPeelLayer,
-                   int generatedLayerCount, bool &showDepth) {
+                   int generatedLayerCount, int &displayMode,
+                   glm::vec3 &planeNormal, float &planeOffset,
+                   float &planeScale) {
   if (showDemoWindow) {
     ImGui::ShowDemoWindow(&showDemoWindow);
   }
@@ -57,7 +59,12 @@ bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled, float &clipNear,
   if (generatedLayerCount > 0) {
     ImGui::SliderInt("Layer", &selectedPeelLayer, 0, generatedLayerCount - 1);
   }
-  ImGui::Checkbox("Show depth", &showDepth);
+  const char *displayModes[] = {"Color", "Depth", "Medium"};
+  ImGui::Combo("Display", &displayMode, displayModes, IM_ARRAYSIZE(displayModes));
+  ImGui::Separator();
+  ImGui::SliderFloat3("Plane normal", &planeNormal.x, -1.0f, 1.0f);
+  ImGui::SliderFloat("Plane offset", &planeOffset, -5.0f, 5.0f);
+  ImGui::SliderFloat("Plane scale", &planeScale, 0.1f, 10.0f);
   ImGui::Checkbox("Show ImGui demo", &showDemoWindow);
   ImGui::End();
 
