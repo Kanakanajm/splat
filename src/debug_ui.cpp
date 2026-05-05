@@ -33,7 +33,8 @@ void DebugUi::beginFrame() {
 }
 
 bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled, float &clipNear,
-                   float &clipFar, bool &showPeeledLayer, bool &showDepth) {
+                   float &clipFar, int &selectedPeelLayer,
+                   int generatedLayerCount, bool &showDepth) {
   if (showDemoWindow) {
     ImGui::ShowDemoWindow(&showDemoWindow);
   }
@@ -52,7 +53,10 @@ bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled, float &clipNear,
   ImGui::SliderFloat("Near", &clipNear, 0.01f, 10.0f);
   ImGui::SliderFloat("Far", &clipFar, 1.0f, 200.0f);
   ImGui::Separator();
-  ImGui::Checkbox("Show peeled layer", &showPeeledLayer);
+  ImGui::Text("Generated layers: %d", generatedLayerCount);
+  if (generatedLayerCount > 0) {
+    ImGui::SliderInt("Layer", &selectedPeelLayer, 0, generatedLayerCount - 1);
+  }
   ImGui::Checkbox("Show depth", &showDepth);
   ImGui::Checkbox("Show ImGui demo", &showDemoWindow);
   ImGui::End();

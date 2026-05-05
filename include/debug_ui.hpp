@@ -13,7 +13,8 @@ public:
 
   void beginFrame();
   bool draw(const Camera &camera, bool &vsyncEnabled, float &clipNear,
-            float &clipFar, bool &showPeeledLayer, bool &showDepth);
+            float &clipFar, int &selectedPeelLayer, int generatedLayerCount,
+            bool &showDepth);
   void endFrame();
 
   bool wantsMouse() const;

@@ -13,8 +13,10 @@
 #include "debug_ui.hpp"
 #include "framebuffer.hpp"
 #include "stb_image.h"
+#include <algorithm>
 #include <iostream>
 #include <memory>
+#include <vector>
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
@@ -27,6 +29,7 @@ void setMouseLook(GLFWwindow *window, bool enabled);
 // settings
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
+constexpr int maxPeelLayers = 16;
 int framebufferWidth = SCR_WIDTH;
 int framebufferHeight = SCR_HEIGHT;
 
@@ -119,7 +122,8 @@ int main() {
   bool vsyncEnabled = true;
   float clipNear = 0.1f;
   float clipFar = 10.0f;
-  bool showPeeledLayer = false;
+  int selectedPeelLayer = 0;
+  int generatedLayerCount = 1;
   bool showDepth = false;
 
   glfwSwapInterval(vsyncEnabled ? 1 : 0);
@@ -131,8 +135,14 @@ int main() {
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
-  Framebuffer firstLayerFbo(framebufferWidth, framebufferHeight);
-  Framebuffer secondLayerFbo(framebufferWidth, framebufferHeight);
+  std::vector<Framebuffer> peelLayers;
+  peelLayers.reserve(maxPeelLayers);
+  for (int i = 0; i < maxPeelLayers; ++i) {
+    peelLayers.emplace_back(framebufferWidth, framebufferHeight);
+  }
+
+  unsigned int peelQuery;
+  glGenQueries(1, &peelQuery);
 
   Shader ourShader("shaders/shader.vs", "shaders/shader.fs");
   Shader depthPeelShader("shaders/shader.vs", "shaders/depth_peel.fs");
@@ -267,8 +277,10 @@ int main() {
 
     processInput(window, uiWantsMouse, uiWantsKeyboard);
 
-    firstLayerFbo.resize(framebufferWidth, framebufferHeight);
-    secondLayerFbo.resize(framebufferWidth, framebufferHeight);
+    for (Framebuffer &layer : peelLayers) {
+      layer.resize(framebufferWidth, framebufferHeight);
+    }
+    glViewport(0, 0, framebufferWidth, framebufferHeight);
 
     const float aspectRatio = framebufferHeight > 0
                                   ? static_cast<float>(framebufferWidth) /
@@ -282,8 +294,8 @@ int main() {
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
 
-    // Pass 1: render the closest visible layer.
-    firstLayerFbo.bind();
+    // Layer 0: render the closest visible layer.
+    peelLayers[0].bind();
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -298,27 +310,41 @@ int main() {
     ourShader.setMat4("view", view);
     drawThreeCubes(ourShader, VAO);
 
-    // Pass 2: render the nearest fragments behind the first layer.
-    secondLayerFbo.bind();
+    generatedLayerCount = 1;
+    for (int layer = 1; layer < maxPeelLayers; ++layer) {
+      peelLayers[layer].bind();
 
-    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture1);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, texture2);
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, firstLayerFbo.depthTexture());
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, texture1);
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, texture2);
+      glActiveTexture(GL_TEXTURE2);
+      glBindTexture(GL_TEXTURE_2D, peelLayers[layer - 1].depthTexture());
 
-    depthPeelShader.use();
-    depthPeelShader.setFloat("peelEpsilon", 0.00001f);
-    depthPeelShader.setMat4("projection", projection);
-    depthPeelShader.setMat4("view", view);
-    drawThreeCubes(depthPeelShader, VAO);
+      depthPeelShader.use();
+      depthPeelShader.setFloat("peelEpsilon", 0.00001f);
+      depthPeelShader.setMat4("projection", projection);
+      depthPeelShader.setMat4("view", view);
 
-    const Framebuffer &displayFbo =
-        showPeeledLayer ? secondLayerFbo : firstLayerFbo;
+      glBeginQuery(GL_ANY_SAMPLES_PASSED, peelQuery);
+      drawThreeCubes(depthPeelShader, VAO);
+      glEndQuery(GL_ANY_SAMPLES_PASSED);
+
+      unsigned int anySamplesPassed = GL_FALSE;
+      glGetQueryObjectuiv(peelQuery, GL_QUERY_RESULT, &anySamplesPassed);
+      if (anySamplesPassed == GL_FALSE) {
+        break;
+      }
+
+      generatedLayerCount = layer + 1;
+    }
+
+    selectedPeelLayer =
+        std::clamp(selectedPeelLayer, 0, generatedLayerCount - 1);
+    const Framebuffer &displayFbo = peelLayers[selectedPeelLayer];
 
     Framebuffer::bindDefault();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -348,8 +374,8 @@ int main() {
       Framebuffer::bindDefault();
     }
 
-    if (debugUi->draw(camera, vsyncEnabled, clipNear, clipFar, showPeeledLayer,
-                      showDepth)) {
+    if (debugUi->draw(camera, vsyncEnabled, clipNear, clipFar,
+                      selectedPeelLayer, generatedLayerCount, showDepth)) {
       glfwSwapInterval(vsyncEnabled ? 1 : 0);
     }
     debugUi->endFrame();
@@ -359,8 +385,10 @@ int main() {
 
   debugUi.reset();
 
-  firstLayerFbo.destroy();
-  secondLayerFbo.destroy();
+  glDeleteQueries(1, &peelQuery);
+  for (Framebuffer &layer : peelLayers) {
+    layer.destroy();
+  }
   glDeleteVertexArrays(1, &VAO);
   glDeleteBuffers(1, &VBO);
   glDeleteVertexArrays(1, &screenQuadVAO);
