@@ -7,6 +7,7 @@
 #include <sstream>
 
 Shader::Shader(const char *vertexPath, const char *fragmentPath) {
+  this->vertexPath = vertexPath;
   // 1. retrieve the vertex/fragment source code from filePath
   std::string vertexCode;
   std::string fragmentCode;
@@ -94,7 +95,7 @@ void Shader::checkCompileErrors(unsigned int shader, std::string type) {
     if (!success) {
       glGetShaderInfoLog(shader, 1024, NULL, infoLog);
       std::cout
-          << "ERROR::SHADER_COMPILATION_ERROR of type: " << type << "\n"
+          << "ERROR::SHADER_COMPILATION_ERROR in "<< vertexPath <<" of type: " << type << "\n"
           << infoLog
           << "\n -- --------------------------------------------------- -- "
           << std::endl;

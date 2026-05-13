@@ -35,6 +35,9 @@ private:
   unsigned int colorTex = 0;
   unsigned int depthTex = 0;
   unsigned int mediumTex = 0;
+  unsigned int colorTexLayer = 0;
+  unsigned int depthTexLayer = 0;
+  unsigned int mediumTexLayer = 0;
   int framebufferWidth = 0;
   int framebufferHeight = 0;
 };

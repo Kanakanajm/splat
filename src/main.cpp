@@ -51,29 +51,49 @@ float deltaTime = 0.0f; // time between current frame and last frame
 float lastFrame = 0.0f;
 
 float vertices[] = {
-    -0.5f, -0.5f, -0.5f, 0.0f, 0.0f, 0.5f,  -0.5f, -0.5f, 1.0f, 0.0f,
-    0.5f,  0.5f,  -0.5f, 1.0f, 1.0f, 0.5f,  0.5f,  -0.5f, 1.0f, 1.0f,
-    -0.5f, 0.5f,  -0.5f, 0.0f, 1.0f, -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
+    -0.5f, -0.5f, -0.5f, 0.0f, 0.0f, 
+    0.5f,  0.5f,  -0.5f, 1.0f, 1.0f, 
+    0.5f,  -0.5f, -0.5f, 1.0f, 0.0f,
+    0.5f,  0.5f,  -0.5f, 1.0f, 1.0f,
+    -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
+    -0.5f, 0.5f,  -0.5f, 0.0f, 1.0f, 
 
-    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f, 0.5f,  -0.5f, 0.5f,  1.0f, 0.0f,
-    0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
-    -0.5f, 0.5f,  0.5f,  0.0f, 1.0f, -0.5f, -0.5f, 0.5f,  0.0f, 0.0f,
+    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f, 
+    0.5f,  -0.5f, 0.5f,  1.0f, 0.0f,
+    0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 
+    0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
+    -0.5f, 0.5f,  0.5f,  0.0f, 1.0f, 
+    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f,
 
-    -0.5f, 0.5f,  0.5f,  1.0f, 0.0f, -0.5f, 0.5f,  -0.5f, 1.0f, 1.0f,
-    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f, -0.5f, 0.5f,  0.5f,  1.0f, 0.0f,
+    -0.5f, 0.5f,  0.5f,  1.0f, 0.0f, 
+    -0.5f, 0.5f,  -0.5f, 1.0f, 1.0f,
+    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 
+    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
+    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f, 
+    -0.5f, 0.5f,  0.5f,  1.0f, 0.0f,
 
-    0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 0.5f,  0.5f,  -0.5f, 1.0f, 1.0f,
-    0.5f,  -0.5f, -0.5f, 0.0f, 1.0f, 0.5f,  -0.5f, -0.5f, 0.0f, 1.0f,
-    0.5f,  -0.5f, 0.5f,  0.0f, 0.0f, 0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+    0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 
+    0.5f,  -0.5f, -0.5f, 0.0f, 1.0f, 
+    0.5f,  0.5f,  -0.5f, 1.0f, 1.0f,
+    0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+    0.5f,  -0.5f, 0.5f,  0.0f, 0.0f, 
+    0.5f,  -0.5f, -0.5f, 0.0f, 1.0f,
 
-    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 0.5f,  -0.5f, -0.5f, 1.0f, 1.0f,
-    0.5f,  -0.5f, 0.5f,  1.0f, 0.0f, 0.5f,  -0.5f, 0.5f,  1.0f, 0.0f,
-    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f, -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
+    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
+    0.5f,  -0.5f, -0.5f, 1.0f, 1.0f,
+    0.5f,  -0.5f, 0.5f,  1.0f, 0.0f,
+    0.5f,  -0.5f, 0.5f,  1.0f, 0.0f,
+    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f,
+    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
 
-    -0.5f, 0.5f,  -0.5f, 0.0f, 1.0f, 0.5f,  0.5f,  -0.5f, 1.0f, 1.0f,
-    0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
-    -0.5f, 0.5f,  0.5f,  0.0f, 0.0f, -0.5f, 0.5f,  -0.5f, 0.0f, 1.0f};
+    
+    -0.5f, 0.5f,  -0.5f, 0.0f, 1.0f,
+    0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+    0.5f,  0.5f,  -0.5f, 1.0f, 1.0f,
+    0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+    -0.5f, 0.5f,  -0.5f, 0.0f, 1.0f,
+    -0.5f, 0.5f,  0.5f,  0.0f, 0.0f
+    };
 
 glm::vec3 cubePositions[] = {
     glm::vec3(0.0f, 0.0f, 0.0f),    glm::vec3(2.0f, 5.0f, -15.0f),
@@ -100,9 +120,9 @@ float screenQuadVertices[] = {
 };
 
 float planeVertices[] = {
-    -0.5f, -0.5f, 0.0f, 0.5f,  -0.5f, 0.0f, 0.5f, 0.5f, 0.0f,
+    -0.5f, -0.5f, 0.0f, 0.5f, -0.5f, 0.0f, 0.5f,  0.5f, 0.0f,
 
-    -0.5f, -0.5f, 0.0f, 0.5f,  0.5f,  0.0f, -0.5f, 0.5f, 0.0f,
+    -0.5f, -0.5f, 0.0f, 0.5f, 0.5f,  0.0f, -0.5f, 0.5f, 0.0f,
 };
 
 int main() {
@@ -164,20 +184,51 @@ int main() {
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
-  std::vector<Framebuffer> peelLayers;
-  peelLayers.reserve(maxPeelLayers);
-  for (int i = 0; i < maxPeelLayers; ++i) {
-    peelLayers.emplace_back(framebufferWidth, framebufferHeight);
-  }
+  // texture array init
+  // 1. Create the Texture Arrays
+  GLuint colorArray, depthArray, mediumArray;
+  glGenTextures(1, &colorArray);
+  glBindTexture(GL_TEXTURE_2D_ARRAY, colorArray);
+  glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, framebufferWidth,
+               framebufferHeight, maxPeelLayers, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+               NULL);
+  glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
+  glGenTextures(1, &depthArray);
+  glBindTexture(GL_TEXTURE_2D_ARRAY, depthArray);
+  glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT24, framebufferWidth,
+               framebufferHeight, maxPeelLayers, 0, GL_DEPTH_COMPONENT,
+               GL_FLOAT, NULL);
+  glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+  glGenTextures(1, &mediumArray);
+  glBindTexture(GL_TEXTURE_2D_ARRAY, mediumArray);
+  glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_R32UI, framebufferWidth,
+               framebufferHeight, maxPeelLayers, 0, GL_RED_INTEGER, GL_UNSIGNED_INT,
+               NULL);
+  glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+  // 2. Create Single FBO
   unsigned int peelQuery;
   glGenQueries(1, &peelQuery);
+
+  GLuint peelFBO;
+  glGenFramebuffers(1, &peelFBO);
+
+  glBindFramebuffer(GL_FRAMEBUFFER, peelFBO);
+  const GLenum peelAttachments[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+  glDrawBuffers(2, peelAttachments);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
   Shader ourShader("shaders/shader.vs", "shaders/shader.fs");
   Shader depthPeelShader("shaders/shader.vs", "shaders/depth_peel.fs");
   Shader depthShader("shaders/depth.vs", "shaders/depth.fs");
   Shader mediumDebugShader("shaders/depth.vs", "shaders/medium_debug.fs");
-  Shader flatColorShader("shaders/flat_color.vs", "shaders/flat_color.fs");
+  Shader flatColorShader("shaders/flat_color.vs", "shaders/flat_trans.fs");
+  Shader wireframeShader("shaders/wireframe.vs", "shaders/wireframe.fs");
 
   unsigned int screenQuadVAO;
   unsigned int screenQuadVBO;
@@ -302,7 +353,19 @@ int main() {
   depthPeelShader.use();
   depthPeelShader.setInt("texture1", 0);
   depthPeelShader.setInt("texture2", 1);
-  depthPeelShader.setInt("previousDepth", 2);
+  depthPeelShader.setInt("previousDepths", 2);
+  depthPeelShader.setInt("previousMedia", 3);
+  depthPeelShader.setFloat("peelEpsilon", 0.00001f);
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, texture1);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, texture2);
+  glActiveTexture(GL_TEXTURE2);
+  glBindTexture(GL_TEXTURE_2D_ARRAY, depthArray);
+  glActiveTexture(GL_TEXTURE3);
+  glBindTexture(GL_TEXTURE_2D_ARRAY, mediumArray);
+  glActiveTexture(GL_TEXTURE0);
 
   // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
   // glPointSize(50.0f);
@@ -326,9 +389,6 @@ int main() {
 
     processInput(window, uiWantsMouse, uiWantsKeyboard);
 
-    for (Framebuffer &layer : peelLayers) {
-      layer.resize(framebufferWidth, framebufferHeight);
-    }
     glViewport(0, 0, framebufferWidth, framebufferHeight);
 
     const float aspectRatio = framebufferHeight > 0
@@ -343,36 +403,42 @@ int main() {
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
 
-    // Layer 0: render the closest visible layer.
-    peelLayers[0].bind();
-    peelLayers[0].clear(0.2f, 0.3f, 0.3f, 1.0f);
+    // Layer 0 Pass
+    glBindFramebuffer(GL_FRAMEBUFFER, peelFBO);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture1);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, texture2);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorArray,
+                              0, 0);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthArray,
+                              0, 0);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, mediumArray,
+                              0, 0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    int mediumClearColor[4] = {0, 0, 0, 0};
+    glClearBufferiv(GL_COLOR, 1, mediumClearColor);
 
     ourShader.use();
     ourShader.setMat4("projection", projection);
     ourShader.setMat4("view", view);
     drawThreeCubes(ourShader, VAO, cubeMediumIds);
 
+    // Subsequent Peels
     generatedLayerCount = 1;
     for (int layer = 1; layer < maxPeelLayers; ++layer) {
-      peelLayers[layer].bind();
-      peelLayers[layer].clear(0.2f, 0.3f, 0.3f, 1.0f);
-
-      glActiveTexture(GL_TEXTURE0);
-      glBindTexture(GL_TEXTURE_2D, texture1);
-      glActiveTexture(GL_TEXTURE1);
-      glBindTexture(GL_TEXTURE_2D, texture2);
-      glActiveTexture(GL_TEXTURE2);
-      glBindTexture(GL_TEXTURE_2D, peelLayers[layer - 1].depthTexture());
+      // Attach CURRENT layer to WRITE to
+      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                colorArray, 0, layer);
+      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthArray,
+                                0, layer);
+      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
+                                mediumArray, 0, layer);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      glClearBufferiv(GL_COLOR, 1, mediumClearColor);
 
       depthPeelShader.use();
-      depthPeelShader.setFloat("peelEpsilon", 0.00001f);
       depthPeelShader.setMat4("projection", projection);
       depthPeelShader.setMat4("view", view);
+      depthPeelShader.setInt("previousLayerIdx",
+                             layer - 1); // Pass index to shader
 
       glBeginQuery(GL_ANY_SAMPLES_PASSED, peelQuery);
       drawThreeCubes(depthPeelShader, VAO, cubeMediumIds);
@@ -387,60 +453,158 @@ int main() {
       generatedLayerCount = layer + 1;
     }
 
-    selectedPeelLayer =
-        std::clamp(selectedPeelLayer, 0, generatedLayerCount - 1);
-    const Framebuffer &displayFbo = peelLayers[selectedPeelLayer];
+    // // Layer 0: render the closest visible layer.
+    // peelLayers[0].bind();
+    // peelLayers[0].clear(0.2f, 0.3f, 0.3f, 1.0f);
+
+    // glActiveTexture(GL_TEXTURE0);
+    // glBindTexture(GL_TEXTURE_2D, texture1);
+    // glActiveTexture(GL_TEXTURE1);
+    // glBindTexture(GL_TEXTURE_2D, texture2);
+
+    // ourShader.use();
+    // ourShader.setMat4("projection", projection);
+    // ourShader.setMat4("view", view);
+    // drawThreeCubes(ourShader, VAO, cubeMediumIds);
+
+    // generatedLayerCount = 1;
+    // for (int layer = 1; layer < maxPeelLayers; ++layer) {
+    //   peelLayers[layer].bind();
+    //   peelLayers[layer].clear(0.2f, 0.3f, 0.3f, 1.0f);
+
+    //   glActiveTexture(GL_TEXTURE0);
+    //   glBindTexture(GL_TEXTURE_2D, texture1);
+    //   glActiveTexture(GL_TEXTURE1);
+    //   glBindTexture(GL_TEXTURE_2D, texture2);
+    //   glActiveTexture(GL_TEXTURE2);
+    //   glBindTexture(GL_TEXTURE_2D, peelLayers[layer - 1].depthTexture());
+
+    //   depthPeelShader.use();
+    //   depthPeelShader.setFloat("peelEpsilon", 0.00001f);
+    //   depthPeelShader.setMat4("projection", projection);
+    //   depthPeelShader.setMat4("view", view);
+
+    //   glBeginQuery(GL_ANY_SAMPLES_PASSED, peelQuery);
+    //   drawThreeCubes(depthPeelShader, VAO, cubeMediumIds);
+    //   glEndQuery(GL_ANY_SAMPLES_PASSED);
+
+    //   unsigned int anySamplesPassed = GL_FALSE;
+    //   glGetQueryObjectuiv(peelQuery, GL_QUERY_RESULT, &anySamplesPassed);
+    //   if (anySamplesPassed == GL_FALSE) {
+    //     break;
+    //   }
+
+    //   generatedLayerCount = layer + 1;
+    // }
+
+    // show wireframe
 
     Framebuffer::bindDefault();
+    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    wireframeShader.use();
+    wireframeShader.setMat4("projection", projection);
+    wireframeShader.setMat4("view", view);
+    wireframeShader.setVec3("color", 1.0f, 0.0f, 0.0f);
+    drawThreeCubes(wireframeShader, VAO, cubeMediumIds);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-    if (displayMode == 1) {
-      glDisable(GL_DEPTH_TEST);
+    // blend a rectangle
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    flatColorShader.use();
+    flatColorShader.setInt("depthMap", 2);
+    flatColorShader.setInt("mediumMap", 3);
+    flatColorShader.setInt("numLayers", generatedLayerCount);
+    flatColorShader.setFloat("depthScale", clipFar - clipNear);
+    flatColorShader.setMat4("projection", projection);
+    flatColorShader.setMat4("view", view);
+    flatColorShader.setMat4(
+        "model", makePlaneModel(planeNormal, planeOffset, planeScale));
+    drawPlane(flatColorShader, planeVAO);
+    glDisable(GL_BLEND);
 
-      depthShader.use();
-      depthShader.setInt("depthTex", 0);
-      depthShader.setFloat("nearPlane", clipNear);
-      depthShader.setFloat("farPlane", clipFar);
 
-      glActiveTexture(GL_TEXTURE0);
-      glBindTexture(GL_TEXTURE_2D, displayFbo.depthTexture());
 
-      glBindVertexArray(screenQuadVAO);
-      glDrawArrays(GL_TRIANGLES, 0, 6);
-      glBindVertexArray(0);
+    // selectedPeelLayer =
+    //     std::clamp(selectedPeelLayer, 0, generatedLayerCount - 1);
 
-      glEnable(GL_DEPTH_TEST);
-    } else if (displayMode == 2) {
-      glDisable(GL_DEPTH_TEST);
+    // Framebuffer::bindDefault();
+    // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-      mediumDebugShader.use();
-      mediumDebugShader.setInt("mediumTex", 0);
+    // glDisable(GL_DEPTH_TEST);
 
-      glActiveTexture(GL_TEXTURE0);
-      glBindTexture(GL_TEXTURE_2D, displayFbo.mediumTexture());
+    // mediumDebugShader.use();
 
-      glBindVertexArray(screenQuadVAO);
-      glDrawArrays(GL_TRIANGLES, 0, 6);
-      glBindVertexArray(0);
+    // mediumDebugShader.setFloat("nearPlane", clipNear);
+    // mediumDebugShader.setFloat("farPlane", clipFar);
 
-      glEnable(GL_DEPTH_TEST);
-    } else {
-      glBindFramebuffer(GL_READ_FRAMEBUFFER, displayFbo.id());
-      glReadBuffer(GL_COLOR_ATTACHMENT0);
-      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-      glBlitFramebuffer(0, 0, displayFbo.width(), displayFbo.height(), 0, 0,
-                        framebufferWidth, framebufferHeight,
-                        GL_COLOR_BUFFER_BIT, GL_NEAREST);
-      Framebuffer::bindDefault();
+    // glActiveTexture(GL_TEXTURE0);
+    // glBindTexture(GL_TEXTURE_2D_ARRAY, mediumArray);
 
-      flatColorShader.use();
-      flatColorShader.setMat4("projection", projection);
-      flatColorShader.setMat4("view", view);
-      flatColorShader.setMat4(
-          "model", makePlaneModel(planeNormal, planeOffset, planeScale));
-      flatColorShader.setVec3("objectColor", 0.1f, 0.8f, 0.9f);
-      drawPlane(flatColorShader, planeVAO);
-    }
+    // mediumDebugShader.setInt("mediumTextures", 0);
+    // mediumDebugShader.setInt("layer", selectedPeelLayer);
+
+    // glBindVertexArray(screenQuadVAO);
+    // glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // glEnable(GL_DEPTH_TEST);
+
+    // const Framebuffer &displayFbo = peelLayers[selectedPeelLayer];
+
+    // Framebuffer::bindDefault();
+    // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // if (displayMode == 1) {
+    //   glDisable(GL_DEPTH_TEST);
+
+    //   depthShader.use();
+    //   depthShader.setInt("depthTex", 0);
+    //   depthShader.setFloat("nearPlane", clipNear);
+    //   depthShader.setFloat("farPlane", clipFar);
+
+    //   glActiveTexture(GL_TEXTURE0);
+    //   glBindTexture(GL_TEXTURE_2D, displayFbo.depthTexture());
+
+    //   glBindVertexArray(screenQuadVAO);
+    //   glDrawArrays(GL_TRIANGLES, 0, 6);
+    //   glBindVertexArray(0);
+
+    //   glEnable(GL_DEPTH_TEST);
+    // } else if (displayMode == 2) {
+    //   glDisable(GL_DEPTH_TEST);
+
+    //   mediumDebugShader.use();
+    //   mediumDebugShader.setInt("mediumTex", 0);
+
+    //   glActiveTexture(GL_TEXTURE0);
+    //   glBindTexture(GL_TEXTURE_2D, displayFbo.mediumTexture());
+
+    //   glBindVertexArray(screenQuadVAO);
+    //   glDrawArrays(GL_TRIANGLES, 0, 6);
+    //   glBindVertexArray(0);
+
+    //   glEnable(GL_DEPTH_TEST);
+    // } else {
+    //   glBindFramebuffer(GL_READ_FRAMEBUFFER, displayFbo.id());
+    //   glReadBuffer(GL_COLOR_ATTACHMENT0);
+    //   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    //   glBlitFramebuffer(0, 0, displayFbo.width(), displayFbo.height(), 0, 0,
+    //                     framebufferWidth, framebufferHeight,
+    //                     GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    //   Framebuffer::bindDefault();
+
+    //   // flatColorShader.use();
+    //   // flatColorShader.setMat4("projection", projection);
+    //   // flatColorShader.setMat4("view", view);
+    //   // flatColorShader.setMat4(
+    //   //     "model", makePlaneModel(planeNormal, planeOffset, planeScale));
+    //   // flatColorShader.setVec3("objectColor", 0.1f, 0.8f, 0.9f);
+    //   // drawPlane(flatColorShader, planeVAO);
+    // }
 
     if (debugUi->draw(camera, vsyncEnabled, clipNear, clipFar,
                       selectedPeelLayer, generatedLayerCount, displayMode,
@@ -455,9 +619,6 @@ int main() {
   debugUi.reset();
 
   glDeleteQueries(1, &peelQuery);
-  for (Framebuffer &layer : peelLayers) {
-    layer.destroy();
-  }
   glDeleteVertexArrays(1, &VAO);
   glDeleteBuffers(1, &VBO);
   glDeleteVertexArrays(1, &screenQuadVAO);
@@ -503,18 +664,19 @@ void drawThreeCubes(Shader &shader, unsigned int VAO,
   glBindVertexArray(VAO);
 
   glm::mat4 model = glm::mat4(1.0f);
-  model = glm::scale(model, glm::vec3(2.0f));
+  model = glm::scale(model, glm::vec3(10.0f));
   shader.setMat4("model", model);
   shader.setInt("mediumId", mediumIds[0]);
   glDrawArrays(GL_TRIANGLES, 0, 36);
 
   model = glm::mat4(1.0f);
+  model = glm::scale(model, glm::vec3(5.0f));
   shader.setMat4("model", model);
   shader.setInt("mediumId", mediumIds[1]);
   glDrawArrays(GL_TRIANGLES, 0, 36);
 
   model = glm::mat4(1.0f);
-  model = glm::scale(model, glm::vec3(0.5f));
+  model = glm::scale(model, glm::vec3(2.0f));
   shader.setMat4("model", model);
   shader.setInt("mediumId", mediumIds[2]);
   glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -536,9 +698,8 @@ glm::mat4 makePlaneModel(const glm::vec3 &normal, float offset, float scale) {
     n = glm::normalize(n);
   }
 
-  const glm::vec3 helper =
-      std::abs(n.y) < 0.99f ? glm::vec3(0.0f, 1.0f, 0.0f)
-                            : glm::vec3(1.0f, 0.0f, 0.0f);
+  const glm::vec3 helper = std::abs(n.y) < 0.99f ? glm::vec3(0.0f, 1.0f, 0.0f)
+                                                 : glm::vec3(1.0f, 0.0f, 0.0f);
   const glm::vec3 tangent = glm::normalize(glm::cross(helper, n));
   const glm::vec3 bitangent = glm::cross(n, tangent);
   const glm::vec3 position = n * offset;

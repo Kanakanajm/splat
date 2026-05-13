@@ -7,6 +7,7 @@ class Shader
 {
 public:
     unsigned int ID;
+    std::string vertexPath;
     Shader(const char* vertexPath, const char* fragmentPath);
     void use();
     // utility uniform functions
