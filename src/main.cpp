@@ -39,7 +39,7 @@ int framebufferWidth = SCR_WIDTH;
 int framebufferHeight = SCR_HEIGHT;
 
 // camera
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+Camera camera(glm::vec3(0.0f, 0.0f, 10.0f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -157,13 +157,13 @@ int main() {
 
   bool vsyncEnabled = true;
   float clipNear = 0.1f;
-  float clipFar = 10.0f;
+  float clipFar = 50.0f;
   int selectedPeelLayer = 0;
   int generatedLayerCount = 1;
   int displayMode = 0;
   glm::vec3 planeNormal(0.0f, 0.0f, 1.0f);
-  float planeOffset = 0.0f;
-  float planeScale = 2.0f;
+  float planeOffset = -5.0f;
+  float planeScale = 10.0f;
   const std::array<HomogeneousMedium, 3> cubeMedia = {
       HomogeneousMedium{1, 0.25f},
       HomogeneousMedium{2, 0.6f},
@@ -395,9 +395,12 @@ int main() {
                                   ? static_cast<float>(framebufferWidth) /
                                         static_cast<float>(framebufferHeight)
                                   : 1.0f;
-    glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
+    glm::mat4 projection = glm::perspective(glm::radians(90.0f),
                                             aspectRatio, clipNear, clipFar);
     glm::mat4 view = camera.GetViewMatrix();
+
+    glm::mat4 invViewProj = glm::inverse(projection * view);
+
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
@@ -519,9 +522,13 @@ int main() {
     flatColorShader.setInt("depthMap", 2);
     flatColorShader.setInt("mediumMap", 3);
     flatColorShader.setInt("numLayers", generatedLayerCount);
-    flatColorShader.setFloat("depthScale", clipFar - clipNear);
     flatColorShader.setMat4("projection", projection);
     flatColorShader.setMat4("view", view);
+    flatColorShader.setMat4("invViewProj", invViewProj);
+    flatColorShader.setVec2("resolution", framebufferWidth, framebufferHeight);
+    flatColorShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+    flatColorShader.setFloat("far", clipFar);
+    flatColorShader.setFloat("near", clipNear);
     flatColorShader.setMat4(
         "model", makePlaneModel(planeNormal, planeOffset, planeScale));
     drawPlane(flatColorShader, planeVAO);
@@ -669,17 +676,17 @@ void drawThreeCubes(Shader &shader, unsigned int VAO,
   shader.setInt("mediumId", mediumIds[0]);
   glDrawArrays(GL_TRIANGLES, 0, 36);
 
-  model = glm::mat4(1.0f);
-  model = glm::scale(model, glm::vec3(5.0f));
-  shader.setMat4("model", model);
-  shader.setInt("mediumId", mediumIds[1]);
-  glDrawArrays(GL_TRIANGLES, 0, 36);
+  // model = glm::mat4(1.0f);
+  // model = glm::scale(model, glm::vec3(5.0f));
+  // shader.setMat4("model", model);
+  // shader.setInt("mediumId", mediumIds[1]);
+  // glDrawArrays(GL_TRIANGLES, 0, 36);
 
-  model = glm::mat4(1.0f);
-  model = glm::scale(model, glm::vec3(2.0f));
-  shader.setMat4("model", model);
-  shader.setInt("mediumId", mediumIds[2]);
-  glDrawArrays(GL_TRIANGLES, 0, 36);
+  // model = glm::mat4(1.0f);
+  // model = glm::scale(model, glm::vec3(2.0f));
+  // shader.setMat4("model", model);
+  // shader.setInt("mediumId", mediumIds[2]);
+  // glDrawArrays(GL_TRIANGLES, 0, 36);
 
   glBindVertexArray(0);
 }
