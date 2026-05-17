@@ -1,0 +1,1 @@
+Use an external Bounding Volume Hierarchy (BVH) traversal library e.g. `tinybvh` to trace photon from light through the scene. **TODO: more details**
