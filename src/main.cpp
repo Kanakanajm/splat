@@ -201,6 +201,17 @@ int main() {
     lightingShader.setMat4("model", model);
     lightingShader.setVec3("viewPos", camera.Position.x, camera.Position.y, camera.Position.z); 
 
+    lightingShader.setVec3("material.ambient", 0.24725f, 0.1995f, 0.0745f);
+    lightingShader.setVec3("material.diffuse", 0.75164f, 0.60648f, 0.22648f);
+    lightingShader.setVec3("material.specular", 0.628281f, 0.555802f, 0.366065f);
+    lightingShader.setFloat("material.shininess", 0.4f * 128.0f);
+
+    lightingShader.setVec3("light.ambient",  1.0f, 1.0f, 1.0f);
+    lightingShader.setVec3("light.diffuse",  1.0f, 1.0f, 1.0f); // darken diffuse light a bit
+    lightingShader.setVec3("light.specular", 1.0f, 1.0f, 1.0f); 
+    lightingShader.setVec3("light.position", lightPos.x, lightPos.y, lightPos.z);
+
+
     glBindVertexArray(VAO);
 
     glDrawArrays(GL_TRIANGLES, 0, 36);
