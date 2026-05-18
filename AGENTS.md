@@ -38,8 +38,11 @@ We use [Catch2 v3](https://github.com/catchorg/Catch2).
 - Each `TEST_CASE` is auto-registered with CTest via `catch_discover_tests`.
 - Tests build by default; disable with `-DBUILD_TESTING=OFF` at configure time.
 
-### Run tests
+### Run Tests
 ```
 cmake --build build -j8
 ctest --test-dir build --output-on-failure
 ```
+
+### Git Branches Guide
+See `docs/git/branches.md`
