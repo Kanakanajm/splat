@@ -13,6 +13,7 @@ add_executable(SplatApp
     src/shader.cpp
     src/camera.cpp
     src/stb_image.cpp
+    src/mesh.cpp
     external/glad/src/glad.c
     external/imgui/imgui.cpp
     external/imgui/imgui_demo.cpp
