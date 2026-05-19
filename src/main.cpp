@@ -211,8 +211,6 @@ int main() {
     uiWantsMouse = debugUi->wantsMouse();
     const bool uiWantsKeyboard = debugUi->wantsKeyboard();
 
-    modelRotationAngle += glm::radians(40.0f) * deltaTime;
-
     processInput(window, uiWantsMouse, uiWantsKeyboard);
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
