@@ -1,0 +1,1 @@
+For each photon beam, build a camera-facing billboard quad and rasterize them. **TODO: more details**

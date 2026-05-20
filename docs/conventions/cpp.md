@@ -1,0 +1,1 @@
+Check https://affaan-m-everything-claude-code.mintlify.app/skills/cpp-coding-standards

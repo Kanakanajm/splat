@@ -34,3 +34,10 @@ target_include_directories(SplatApp PRIVATE
 )
 
 target_link_libraries(SplatApp PRIVATE glfw glm::glm assimp::assimp)
+
+include(CTest)
+if(BUILD_TESTING)
+    find_package(Catch2 3 REQUIRED)
+    include(Catch)
+    add_subdirectory(tests)
+endif()
