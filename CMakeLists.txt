@@ -14,6 +14,7 @@ add_executable(SplatApp
     src/camera.cpp
     src/stb_image.cpp
     src/mesh.cpp
+    src/model.cpp
     external/glad/src/glad.c
     external/imgui/imgui.cpp
     external/imgui/imgui_demo.cpp
@@ -32,4 +33,4 @@ target_include_directories(SplatApp PRIVATE
     external/imgui/backends
 )
 
-target_link_libraries(SplatApp PRIVATE glfw glm::glm)
+target_link_libraries(SplatApp PRIVATE glfw glm::glm assimp::assimp)
