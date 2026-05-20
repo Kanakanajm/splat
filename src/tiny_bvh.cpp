@@ -1,2 +1,2 @@
-#define TINY_BVH_IMPLEMENTATION
+#define TINYBVH_IMPLEMENTATION
 #include "tiny_bvh.h"
