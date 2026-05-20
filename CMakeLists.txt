@@ -13,6 +13,7 @@ add_executable(SplatApp
     src/shader.cpp
     src/camera.cpp
     src/stb_image.cpp
+    src/tiny_bvh.cpp
     src/mesh.cpp
     src/model.cpp
     external/glad/src/glad.c
@@ -29,6 +30,7 @@ target_include_directories(SplatApp PRIVATE
     include
     external/glad/include
     external/stb
+    external/tinybvh
     external/imgui
     external/imgui/backends
 )
