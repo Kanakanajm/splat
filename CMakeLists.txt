@@ -15,6 +15,8 @@ add_executable(SplatApp
     src/stb_image.cpp
     src/tiny_bvh.cpp
     src/ray_model.cpp
+    src/ray_camera.cpp
+    src/image_buffer.cpp
     src/mesh.cpp
     src/model.cpp
     external/glad/src/glad.c
