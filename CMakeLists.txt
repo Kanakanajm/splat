@@ -17,6 +17,9 @@ add_executable(SplatApp
     src/ray_model.cpp
     src/ray_camera.cpp
     src/image_buffer.cpp
+    src/sampling.cpp
+    src/point_light.cpp
+    src/photon_tracer.cpp
     src/mesh.cpp
     src/model.cpp
     external/glad/src/glad.c
