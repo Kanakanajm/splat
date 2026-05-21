@@ -6,6 +6,7 @@
 #include "random.hpp"
 #include "ray_camera.hpp"
 #include "ray_model.hpp"
+#include "scene.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -24,8 +25,9 @@ TEST_CASE("PhotonTracer: photons land on Suzanne and project into a debug PPM",
     tinybvh::BVH bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
+    Scene scene{model};
     PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 3.0f}, /*medium_id=*/0u};
-    PhotonTracer tracer{model, bvh, light};
+    PhotonTracer tracer{scene, bvh, light};
     Rng rng{0xDECAFu};
 
     constexpr uint32_t kN = 50000;

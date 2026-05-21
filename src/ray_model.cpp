@@ -5,6 +5,14 @@
 #include <assimp/scene.h>
 
 #include <iostream>
+#include <utility>
+
+RayModel::RayModel(std::vector<tinybvh::bvhvec4> tris,
+                   std::vector<uint32_t>         tri_instance,
+                   uint32_t                      instance_count)
+    : tris_(std::move(tris)),
+      tri_instance_(std::move(tri_instance)),
+      instance_count_(instance_count) {}
 
 RayModel::RayModel(const std::string& path) {
     Assimp::Importer importer;

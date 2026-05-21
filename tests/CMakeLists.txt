@@ -6,6 +6,7 @@ add_executable(SplatTests
     sampling_test.cpp
     point_light_test.cpp
     photon_tracer_test.cpp
+    scene_test.cpp
     ${CMAKE_SOURCE_DIR}/src/ray_model.cpp
     ${CMAKE_SOURCE_DIR}/src/tiny_bvh.cpp
     ${CMAKE_SOURCE_DIR}/src/ray_camera.cpp
@@ -13,6 +14,7 @@ add_executable(SplatTests
     ${CMAKE_SOURCE_DIR}/src/sampling.cpp
     ${CMAKE_SOURCE_DIR}/src/point_light.cpp
     ${CMAKE_SOURCE_DIR}/src/photon_tracer.cpp
+    ${CMAKE_SOURCE_DIR}/src/scene.cpp
 )
 
 target_include_directories(SplatTests PRIVATE

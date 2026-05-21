@@ -13,6 +13,6 @@ void PhotonTracer::trace(uint32_t photon_count, Rng& rng) {
             ray.O.x + ray.hit.t * ray.D.x,
             ray.O.y + ray.hit.t * ray.D.y,
             ray.O.z + ray.hit.t * ray.D.z};
-        points_.push_back({p, model_.instance_id(ray.hit.prim)});
+        points_.push_back({p, scene_.bsdf_id_at(ray.hit.prim)});
     }
 }

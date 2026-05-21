@@ -10,6 +10,12 @@ class RayModel {
 public:
     explicit RayModel(const std::string& path);
 
+    // Build directly from in-memory data (no assimp). Useful for tests and
+    // procedurally generated scenes.
+    RayModel(std::vector<tinybvh::bvhvec4> tris,
+             std::vector<uint32_t>         tri_instance,
+             uint32_t                      instance_count);
+
     const std::vector<tinybvh::bvhvec4>& triangles() const { return tris_; }
     uint32_t triangle_count() const { return static_cast<uint32_t>(tri_instance_.size()); }
 
