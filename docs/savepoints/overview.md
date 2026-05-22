@@ -18,5 +18,6 @@
 
 | Savepoint | Branch | Summary |
 |---|---|---|
+| [trace_v2_status.md](trace_v2_status.md) | `trace` | RGB power tracking, RR, Conductor/Dielectric BSDFs, power AOVs. 0/7 tasks done. |
 | Opacity pass | `opacity` | Frustum slicing / depth peeling for camera-side attenuation maps. See `docs/project/opacity.md`. |
 | Splat pass | `splat` | Rasterize beams as billboard quads. See `docs/project/splat.md`. |

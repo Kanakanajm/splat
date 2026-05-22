@@ -56,4 +56,66 @@ After the photon tracing phase ends, visualize them with options in `imgui` to s
 Color photon point with fake color based on `bsdf_id` and beams on `medium_id`. Wireframe of the scene objects can be blended in as a reference.
 
 # Further Versions
-## V2: add proper power/flux updates during interactions
+## V2: Power/Flux Tracking During Interactions
+
+### Scope
+Add per-photon RGB power tracking through the full path. Power is initialized from the light source, propagated through medium and surface interactions via physically-based weight updates, and stored in each `PhotonBeam` and `PhotonPoint` record. Russian roulette replaces stochastic termination alongside the hard depth cap. Also implements the two deferred V1 BSDFs: **Conductor** (mirror) and **Dielectric** (Fresnel reflect/refract with medium switch).
+
+### Struct Changes
+- `PointLight` — add `bvhvec3 power` (JSON-configurable, e.g. `"power": [1, 1, 1]`)
+- `PhotonBeam` — add `bvhvec3 power` (power entering the segment at `start`)
+- `PhotonPoint` — add `bvhvec3 power`
+- `Bsdf` — add `bvhvec3 transmittance_color` for Dielectric (existing `color` field becomes the reflectance tint); existing `color` is already the reflectance for Diffuse and Conductor
+- `Bsdf::sample` return type extended from `bvhvec3` to `BsdfSample { bvhvec3 dir; bvhvec3 weight; bool is_refract; }` — the tracer reads `is_refract` for medium switch on Dielectric (previously only `BsdfKind::MediumShell` triggered medium switch); the BSDF encapsulates its own weight so the tracer does not recompute it
+
+### Algorithm
+
+Per photon. Initialize `weight = light.power / N` (per-photon share of total flux).
+
+1. **Emit.** As V1.
+2. **Closest-hit query.** As V1.
+3. **Free-flight sample.** As V1.
+4. **Branch:**
+   - **(a) `t_media < t_hit` — medium scatter:**
+     1. Record `PhotonBeam { start = ray.O, end = ray(t_hit), medium_id, power = weight }`.
+     2. **Russian roulette:** `prr = clamp(max_component(weight), 0.05, 0.95)`. If `ξ ≥ prr` terminate; else `weight /= prr`.
+     3. `weight *= σ_s / σ_t` (single-scatter albedo — see design note).
+     4. Sample isotropic direction, spawn new ray from scatter point.
+   - **(b) Surface hit:**
+     1. **No weight correction for medium traversal** (see design note).
+     2. If diffuse: record `PhotonPoint { position = p, power = weight, ... }`.
+     3. **Russian roulette** (same formula as above).
+     4. Call `bsdf.sample(rng, incoming, normal)` → `BsdfSample { dir, weight: bsdf_w, is_refract }`.
+     5. `weight *= bsdf_w`.
+     6. Medium switch if `is_refract` (Dielectric) or always (MediumShell), same flip logic as V1.
+     7. Spawn new ray with ε-offset as V1.
+5. **Terminate** if `weight` is black (all components zero after RR), or at the hard depth cap.
+
+### BSDF Weight Rules (from lightwave bsdf reference)
+| BSDF | Direction | `bsdf_w` | `is_refract` |
+|---|---|---|---|
+| Diffuse | cosine-hemisphere | `bsdf.color` (albedo) | `false` |
+| Conductor | perfect mirror `reflect(D, n)` | `bsdf.color` (reflectance) | `false` |
+| Dielectric (reflect) | `reflect(D, n)` | `bsdf.color` | `false` |
+| Dielectric (refract) | `refract(D, n, η)` | `bsdf.transmittance_color / η²` | `true` |
+| MediumShell | pass-through | `{1,1,1}` | `true` |
+
+Dielectric branch chosen stochastically: compute `F = fresnelDielectric(cosθ, η)`; sample `ξ`; reflect if `ξ < F`, refract otherwise. Fresnel cancels with the sampling probability so no additional `F`-scaling is needed. TIR is handled inside `fresnelDielectric` (returns `F = 1`).
+
+`fresnelDielectric` — full unpolarized Fresnel (not Schlick):
+```
+cosThetaT² = 1 - (1/η)² · (1 - cosθ²)
+if cosThetaT² ≤ 0: TIR → F = 1
+Rs = (η·cosθ - cosThetaT) / (η·cosθ + cosThetaT)
+Rp = (cosθ - η·cosThetaT) / (cosθ + η·cosThetaT)
+F  = 0.5 · (Rs² + Rp²)
+```
+
+### Design Notes
+> These decisions were made during V2 planning and are kept for future toggling / comparison experiments.
+
+**Scatter weight — `σ_s/σ_t` (chosen)**
+When free-flight samples `d` from pdf = `σ_t · exp(−σ_t · d)`, the transmittance `exp(−σ_t · d)` and the PDF denominator cancel, leaving only the single-scatter albedo `σ_s / σ_t`. Alternative from beam.cpp: `weight *= exp(−σ_t · d) · (1 / prr)`.
+
+**Surface transmittance — Option A: no explicit factor (chosen)**
+With free-flight sampling, the probability of reaching the surface without scatter is `exp(−σ_t · t_hit)`. This survival probability and the transmittance cancel in the MC estimator, so the running weight needs no update at a surface hit through a medium. Alternative — Option B (beam.cpp): `weight *= exp(−σ_t · t_hit)` before the surface interaction.
