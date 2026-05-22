@@ -22,31 +22,6 @@ std::array<float, 3> instance_color(uint32_t id) {
     return kPalette[id % kPalette.size()];
 }
 
-// Distinct color per medium id (id 0 = vacuum is never drawn as a beam).
-std::array<float, 3> medium_color(uint32_t id) {
-    static const std::array<std::array<float, 3>, 5> kPalette{{
-        {0.60f, 0.60f, 0.60f}, {0.40f, 0.85f, 0.95f}, {0.95f, 0.55f, 0.30f},
-        {0.65f, 0.95f, 0.45f}, {0.85f, 0.45f, 0.95f},
-    }};
-    return kPalette[id % kPalette.size()];
-}
-
-// Build (or refresh) a VAO/VBO from interleaved [x,y,z, r,g,b] vertex data.
-void upload_interleaved(unsigned int& vao, unsigned int& vbo, const std::vector<float>& data) {
-    if (vao == 0) glGenVertexArrays(1, &vao);
-    if (vbo == 0) glGenBuffers(1, &vbo);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(data.size() * sizeof(float)),
-                 data.data(), GL_STATIC_DRAW);
-    constexpr GLsizei stride = 6 * sizeof(float);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
-    glBindVertexArray(0);
-}
-
 tinybvh::bvhvec3 cross3(const tinybvh::bvhvec3& a, const tinybvh::bvhvec3& b) {
     return { a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x };
 }
@@ -225,25 +200,93 @@ void Scene::draw_points(Shader& shader, int aov_mode,
 
 // ---- Photon Beams -----------------------------------------------------------
 
-void Scene::upload_beams(const std::vector<PhotonBeam>& beams) {
-    // Two vertices (start, end) per beam; color both by medium id.
+namespace {
+
+// Layout per vertex: [x, y, z, medium_id, t, bounce_depth, length] — 7 floats.
+// Two vertices per beam: start (t=0) and end (t=1).
+std::vector<float> encode_beams(const std::vector<PhotonBeam>& beams,
+                                const std::vector<bool>& medium_visible,
+                                int bounce_filter,
+                                float& out_max_bounce, float& out_max_length) {
     std::vector<float> data;
-    data.reserve(beams.size() * 12);
-    auto push = [&](const tinybvh::bvhvec3& p, const std::array<float, 3>& c) {
-        data.push_back(p.x); data.push_back(p.y); data.push_back(p.z);
-        data.push_back(c[0]); data.push_back(c[1]); data.push_back(c[2]);
-    };
+    data.reserve(beams.size() * 14);
+    out_max_bounce = 1.0f;
+    out_max_length = 1.0f;
     for (const auto& b : beams) {
-        const auto c = medium_color(b.medium_id);
-        push(b.start, c);
-        push(b.end, c);
+        if (!medium_visible.empty() &&
+            b.medium_id < medium_visible.size() &&
+            !medium_visible[b.medium_id])
+            continue;
+        if (bounce_filter >= 0 && static_cast<int>(b.bounce_depth) != bounce_filter)
+            continue;
+        const float dx  = b.end.x - b.start.x;
+        const float dy  = b.end.y - b.start.y;
+        const float dz  = b.end.z - b.start.z;
+        const float len = std::sqrt(dx*dx + dy*dy + dz*dz);
+        const float bd  = static_cast<float>(b.bounce_depth);
+        const float mid = static_cast<float>(b.medium_id);
+        if (bd  > out_max_bounce) out_max_bounce = bd;
+        if (len > out_max_length) out_max_length = len;
+        auto push = [&](const tinybvh::bvhvec3& p, float t) {
+            data.push_back(p.x); data.push_back(p.y); data.push_back(p.z);
+            data.push_back(mid); data.push_back(t); data.push_back(bd); data.push_back(len);
+        };
+        push(b.start, 0.0f);
+        push(b.end,   1.0f);
     }
-    beam_vertex_count_ = static_cast<uint32_t>(beams.size() * 2);
-    upload_interleaved(beams_vao_, beams_vbo_, data);
+    return data;
 }
 
-void Scene::draw_beams(Shader& shader) const {
+void upload_beams_vbo(unsigned int& vao, unsigned int& vbo, const std::vector<float>& data) {
+    if (vao == 0) glGenVertexArrays(1, &vao);
+    if (vbo == 0) glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(data.size() * sizeof(float)),
+                 data.data(), GL_STATIC_DRAW);
+    constexpr GLsizei stride = 7 * sizeof(float);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, stride, (void*)(4 * sizeof(float)));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, stride, (void*)(5 * sizeof(float)));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float)));
+    glBindVertexArray(0);
+}
+
+}  // namespace (beam helpers)
+
+void Scene::upload_beams(const std::vector<PhotonBeam>& beams) {
+    beams_cache_ = beams;
+    beams_medium_filter_cache_.clear();
+    beams_bounce_filter_cache_ = -2;
+    const auto data = encode_beams(beams, {}, -1, beam_max_bounce_, beam_max_length_);
+    beam_vertex_count_ = static_cast<uint32_t>(data.size() / 7);
+    upload_beams_vbo(beams_vao_, beams_vbo_, data);
+}
+
+void Scene::draw_beams(Shader& shader, int aov_mode, const std::vector<bool>& medium_visible,
+                       int bounce_filter) {
+    if (medium_visible != beams_medium_filter_cache_ ||
+        bounce_filter  != beams_bounce_filter_cache_) {
+        beams_medium_filter_cache_ = medium_visible;
+        beams_bounce_filter_cache_ = bounce_filter;
+        // Use temporaries so beam_max_bounce_/beam_max_length_ (set from all beams
+        // in upload_beams) are never overwritten by a filtered subset's max.
+        float tmp_bounce, tmp_length;
+        const auto data = encode_beams(beams_cache_, medium_visible, bounce_filter,
+                                       tmp_bounce, tmp_length);
+        beam_vertex_count_ = static_cast<uint32_t>(data.size() / 7);
+        upload_beams_vbo(beams_vao_, beams_vbo_, data);
+    }
     shader.use();
+    shader.setInt("aov_mode", aov_mode);
+    shader.setFloat("maxBounce", beam_max_bounce_);
+    shader.setFloat("maxLength", beam_max_length_);
     glBindVertexArray(beams_vao_);
     glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(beam_vertex_count_));
     glBindVertexArray(0);

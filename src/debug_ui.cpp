@@ -87,7 +87,7 @@ void DebugUi::drawPhotonPointPanel(uint32_t max_bounce) {
     int p = static_cast<int>(state_.pointAov);
     ImGui::RadioButton("InstanceId",  &p, static_cast<int>(ViewState::PointAov::InstanceId));  ImGui::SameLine();
     ImGui::RadioButton("BsdfKind",    &p, static_cast<int>(ViewState::PointAov::BsdfKind));    ImGui::SameLine();
-    ImGui::RadioButton("BounceDepth", &p, static_cast<int>(ViewState::PointAov::BounceDepth));
+    ImGui::RadioButton("BounceDepth##pt", &p, static_cast<int>(ViewState::PointAov::BounceDepth));
     state_.pointAov = static_cast<ViewState::PointAov>(p);
 
     ImGui::Checkbox("All bounces", &state_.allBounces);
@@ -115,7 +115,7 @@ void DebugUi::drawPhotonPointPanel(uint32_t max_bounce) {
     }
 }
 
-void DebugUi::drawPhotonBeamPanel() {
+void DebugUi::drawPhotonBeamPanel(uint32_t max_bounce) {
     if (!ImGui::CollapsingHeader("Photon Beams")) return;
 
     ImGui::Checkbox("Show beams", &state_.showBeams);
@@ -124,11 +124,21 @@ void DebugUi::drawPhotonBeamPanel() {
     ImGui::Text("AOV:");
     ImGui::SameLine();
     int b = static_cast<int>(state_.beamAov);
-    ImGui::RadioButton("MediumId",    &b, static_cast<int>(ViewState::BeamAov::MediumId));    ImGui::SameLine();
-    ImGui::RadioButton("T",           &b, static_cast<int>(ViewState::BeamAov::T));           ImGui::SameLine();
-    ImGui::RadioButton("BounceDepth", &b, static_cast<int>(ViewState::BeamAov::BounceDepth)); ImGui::SameLine();
-    ImGui::RadioButton("Length",      &b, static_cast<int>(ViewState::BeamAov::Length));
+    ImGui::RadioButton("MediumId",       &b, static_cast<int>(ViewState::BeamAov::MediumId));    ImGui::SameLine();
+    ImGui::RadioButton("T",              &b, static_cast<int>(ViewState::BeamAov::T));           ImGui::SameLine();
+    ImGui::RadioButton("BounceDepth##bm",&b, static_cast<int>(ViewState::BeamAov::BounceDepth)); ImGui::SameLine();
+    ImGui::RadioButton("Length",         &b, static_cast<int>(ViewState::BeamAov::Length));
     state_.beamAov = static_cast<ViewState::BeamAov>(b);
+
+    ImGui::Checkbox("All bounces##bm", &state_.allBeamBounces);
+    if (!state_.allBeamBounces) {
+        state_.beamBounceFilter = std::min(state_.beamBounceFilter, static_cast<int>(max_bounce));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SliderInt("##beambounce", &state_.beamBounceFilter, 0, static_cast<int>(max_bounce));
+        ImGui::SameLine();
+        ImGui::Text("bounce %d", state_.beamBounceFilter);
+    }
 
     if (!state_.mediumBeamsVisible.empty()) {
         ImGui::Text("Filter by medium:");
@@ -148,7 +158,8 @@ void DebugUi::drawPhotonBeamPanel() {
 // ---- main draw --------------------------------------------------------------
 
 bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
-                   uint32_t instance_count, uint32_t medium_count, uint32_t max_bounce) {
+                   uint32_t instance_count, uint32_t medium_count,
+                   uint32_t max_bounce, uint32_t beam_max_bounce) {
     if (showDemoWindow_) ImGui::ShowDemoWindow(&showDemoWindow_);
 
     // Resize filter vectors to match scene counts (fill new slots as visible).
@@ -171,7 +182,7 @@ bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
 
     drawGeometryPanel();
     drawPhotonPointPanel(max_bounce);
-    drawPhotonBeamPanel();
+    drawPhotonBeamPanel(beam_max_bounce);
 
     ImGui::Separator();
     ImGui::Checkbox("ImGui demo", &showDemoWindow_);

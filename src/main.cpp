@@ -192,12 +192,14 @@ int main(int argc, char **argv) {
     // --- Photon beam pass
     if (vs.showBeams) {
       setCameraUniforms(beamShader, projection, view);
-      scene.draw_beams(beamShader);
+      const int beamBounceFilter = vs.allBeamBounces ? -1 : vs.beamBounceFilter;
+      scene.draw_beams(beamShader, static_cast<int>(vs.beamAov), vs.mediumBeamsVisible, beamBounceFilter);
     }
 
     const uint32_t instance_count = rayModel.instance_count();
-    const uint32_t medium_count   = 8u;
-    if (debugUi->draw(camera, vsyncEnabled, instance_count, medium_count, scene.max_bounce_depth())) {
+    const uint32_t medium_count   = scene.medium_count();
+    if (debugUi->draw(camera, vsyncEnabled, instance_count, medium_count,
+                      scene.max_bounce_depth(), scene.beam_max_bounce())) {
       glfwSwapInterval(vsyncEnabled ? 1 : 0);
     }
     debugUi->endFrame();

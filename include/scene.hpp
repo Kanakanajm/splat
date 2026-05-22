@@ -34,6 +34,7 @@ public:
     // table as needed, leaving gaps as default-constructed (vacuum).
     void set_medium(uint32_t medium_id, const Medium& medium);
     const Medium& medium(uint32_t medium_id) const { return medium_table_[medium_id]; }
+    uint32_t medium_count() const { return static_cast<uint32_t>(medium_table_.size()); }
 
     const RayModel& model() const { return model_; }
 
@@ -50,7 +51,11 @@ public:
     void draw_points(Shader& shader, int aov_mode,
                      const std::vector<bool>& instance_visible, int bounce_filter = -1);
     void upload_beams(const std::vector<PhotonBeam>& beams);
-    void draw_beams(Shader& shader) const;
+    uint32_t beam_max_bounce() const { return static_cast<uint32_t>(beam_max_bounce_); }
+    // aov_mode matches ViewState::BeamAov ordinal. Re-uploads if medium filter or bounce filter changed.
+    // bounce_filter = -1 shows all bounces; >= 0 shows only that depth.
+    void draw_beams(Shader& shader, int aov_mode, const std::vector<bool>& medium_visible,
+                    int bounce_filter = -1);
 
 private:
     const RayModel&       model_;
@@ -79,4 +84,9 @@ private:
     unsigned int beams_vao_         = 0;
     unsigned int beams_vbo_         = 0;
     uint32_t     beam_vertex_count_ = 0;  // 2 vertices per beam
+    std::vector<PhotonBeam> beams_cache_;
+    std::vector<bool>       beams_medium_filter_cache_;
+    int                     beams_bounce_filter_cache_ = -2;  // -2 = uninitialized
+    float                   beam_max_bounce_ = 1.0f;
+    float                   beam_max_length_ = 1.0f;
 };

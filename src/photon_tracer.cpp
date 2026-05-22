@@ -57,7 +57,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
                                   {ray.O.x + t_hit * ray.D.x,
                                    ray.O.y + t_hit * ray.D.y,
                                    ray.O.z + t_hit * ray.D.z},
-                                  m});
+                                  m, depth});
 
                 
                 const tinybvh::bvhvec3 dir = sample_unit_sphere(rng);

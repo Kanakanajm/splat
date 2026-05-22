@@ -15,4 +15,5 @@ struct PhotonBeam {
     tinybvh::bvhvec3 start;
     tinybvh::bvhvec3 end;
     uint32_t         medium_id;
+    uint32_t         bounce_depth;
 };

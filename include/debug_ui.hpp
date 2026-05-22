@@ -23,6 +23,8 @@ struct ViewState {
     bool showBeams = true;
     enum class BeamAov : int { MediumId, T, BounceDepth, Length } beamAov = BeamAov::MediumId;
     std::vector<bool> mediumBeamsVisible;  // per-medium; empty = all visible
+    bool allBeamBounces   = true;
+    int  beamBounceFilter = 0;
 };
 
 class DebugUi {
@@ -36,7 +38,8 @@ public:
     void beginFrame();
     // Draws all ImGui panels; returns true if vsync was toggled.
     bool draw(const Camera& camera, bool& vsyncEnabled,
-              uint32_t instance_count, uint32_t medium_count, uint32_t max_bounce);
+              uint32_t instance_count, uint32_t medium_count,
+              uint32_t max_bounce, uint32_t beam_max_bounce);
     void endFrame();
 
     bool wantsMouse() const;
@@ -47,7 +50,7 @@ public:
 private:
     void drawGeometryPanel();
     void drawPhotonPointPanel(uint32_t max_bounce);
-    void drawPhotonBeamPanel();
+    void drawPhotonBeamPanel(uint32_t max_bounce);
 
     ViewState state_;
     bool showDemoWindow_ = false;
