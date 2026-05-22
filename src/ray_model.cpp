@@ -7,6 +7,8 @@
 #include <iostream>
 #include <utility>
 
+static const std::string kEmptyName;
+
 RayModel::RayModel(std::vector<tinybvh::bvhvec4> tris,
                    std::vector<uint32_t>         tri_instance,
                    uint32_t                      instance_count)
@@ -26,8 +28,10 @@ RayModel::RayModel(const std::string& path) {
     }
 
     instance_count_ = scene->mNumMeshes;
+    instance_names_.reserve(instance_count_);
     for (uint32_t m = 0; m < scene->mNumMeshes; ++m) {
         const aiMesh* mesh = scene->mMeshes[m];
+        instance_names_.emplace_back(mesh->mName.C_Str());
         for (uint32_t f = 0; f < mesh->mNumFaces; ++f) {
             const aiFace& face = mesh->mFaces[f];
             if (face.mNumIndices != 3) continue;
@@ -38,4 +42,16 @@ RayModel::RayModel(const std::string& path) {
             tri_instance_.push_back(m);
         }
     }
+}
+
+const std::string& RayModel::instance_name(uint32_t id) const {
+    if (id < instance_names_.size()) return instance_names_[id];
+    return kEmptyName;
+}
+
+std::optional<uint32_t> RayModel::find_instance(const std::string& name) const {
+    for (uint32_t i = 0; i < static_cast<uint32_t>(instance_names_.size()); ++i) {
+        if (instance_names_[i] == name) return i;
+    }
+    return std::nullopt;
 }

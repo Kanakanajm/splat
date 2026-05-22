@@ -14,6 +14,7 @@
 
 #include "ray_model.hpp"
 #include "scene.hpp"
+#include "scene_config.hpp"
 #include "point_light.hpp"
 #include "photon_tracer.hpp"
 #include "random.hpp"
@@ -149,20 +150,13 @@ int main(int argc, char **argv) {
   bvh.Build(rayModel.triangles().data(), rayModel.triangle_count());
 
   Scene scene(rayModel);
-  scene.set_bsdf(1u, Bsdf{BsdfKind::MediumShell, 1.0f});  // shared pass-through shell
-
-  PointLight light{tinybvh::bvhvec3{0.0f, 1.2f, 2.0f}, 0u};  // above the scene, in vacuum
+  PointLight light{tinybvh::bvhvec3{0.0f, 1.2f, 2.0f}, 0u};
 
   if (useFile) {
-    // Turn the tall box into a participating-medium volume distinct from the
-    // light's medium (vacuum); photons crossing inward enter medium 1 and scatter.
-    scene.set_instance_bsdf(6u, 1u);
-    scene.set_instance_medium(6u, /*in=*/2u, /*out=*/0u);
-    scene.set_medium(2u, Medium{/*sigma_s=*/8.0f, /*sigma_a=*/1.0f});
-    light = PointLight{tinybvh::bvhvec3{0.0f, 1.48f, 2.18f}, 0u};
-    std::cout << "Medium box = instance " << 6u << std::endl;
+    light = SceneConfig::load(std::string(argv[1])).apply(scene);
   } else {
-    // Each shell separates its inside medium (i+1) from the medium just outside (i).
+    // Procedural: three nested medium-shell cubes, regions vacuum|1|2|3.
+    scene.set_bsdf(1u, Bsdf{BsdfKind::MediumShell});
     for (uint32_t i = 0; i < 3; ++i) scene.set_instance_bsdf(i, 1u);
     scene.set_instance_medium(0u, /*in=*/1u, /*out=*/0u);
     scene.set_instance_medium(1u, /*in=*/2u, /*out=*/1u);
