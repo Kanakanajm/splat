@@ -14,6 +14,7 @@ add_executable(SplatApp
     src/camera.cpp
     src/stb_image.cpp
     src/tiny_bvh.cpp
+    src/json.cpp
     src/ray_model.cpp
     src/ray_camera.cpp
     src/image_buffer.cpp
@@ -21,7 +22,7 @@ add_executable(SplatApp
     src/point_light.cpp
     src/photon_tracer.cpp
     src/scene.cpp
-    src/scene_gl.cpp
+        src/scene_gl.cpp
     src/bsdf.cpp
     src/mesh.cpp
     src/model.cpp
@@ -42,6 +43,7 @@ target_include_directories(SplatApp PRIVATE
     external/tinybvh
     external/imgui
     external/imgui/backends
+    external/nlohmann
 )
 
 target_link_libraries(SplatApp PRIVATE glfw glm::glm assimp::assimp)
