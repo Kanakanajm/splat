@@ -16,5 +16,9 @@
 
 # Planned
 
-- Opacity pass (`opacity` branch, per `docs/project/opacity.md`)
-- Splat pass (`splat` branch, per `docs/project/splat.md`)
+| Savepoint | Branch | Summary |
+|---|---|---|
+| [scene_config_status.md](scene_config_status.md) | `trace` | JSON sidecar to assign BSDF/medium by object name; replaces hardcoded main.cpp setup. Do this first. |
+| [aov_debug_status.md](aov_debug_status.md) | `trace` | ViewState-driven debug AOVs: geometry wireframe/normals/depth/backface, point/beam coloring modes, per-instance and per-medium filters. Depends on SceneConfig. |
+| Opacity pass | `opacity` | Frustum slicing / depth peeling for camera-side attenuation maps. See `docs/project/opacity.md`. |
+| Splat pass | `splat` | Rasterize beams as billboard quads. See `docs/project/splat.md`. |
