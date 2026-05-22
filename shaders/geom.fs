@@ -3,9 +3,11 @@ in vec3 vNormal;
 in vec3 vFragPos;
 
 uniform int instanceId;
-uniform int aov_mode;   // 0=Diffuse(flat color)  1=Normal  2=Depth  3=Backface
+uniform int aov_mode;   // matches ViewState::GeomAov: 0=None 1=Diffuse 2=Normal 3=Depth 4=Backface
 
+uniform vec3  bsdfColor;
 uniform vec3  cameraPos;
+uniform vec3  lightPos;
 uniform float nearPlane;
 uniform float farPlane;
 
@@ -26,23 +28,26 @@ vec3 instance_color(int id) {
 void main() {
     vec3 N = normalize(vNormal);
 
-    // aov_mode matches ViewState::GeomAov: 0=None 1=Diffuse 2=Normal 3=Depth 4=Backface
-    if (aov_mode == 2) {
-        // Normal: map [-1,1] to [0,1]
+    if (aov_mode == 1) {
+        // Diffuse: Lambertian shading with the BSDF's own color as albedo (no specular, no ambient)
+        vec3 L = normalize(lightPos - vFragPos);
+        float diff = max(dot(N, L), 0.0);
+        FragColor = vec4(bsdfColor * diff, 1.0);
+    } else if (aov_mode == 2) {
+        // Normal: map [-1,1] to [0,1] as RGB
         FragColor = vec4(N * 0.5 + 0.5, 1.0);
     } else if (aov_mode == 3) {
-        // Depth: linear distance remapped to [0,1]
+        // Depth: linear distance from camera, near=black, far=white
         float dist = length(vFragPos - cameraPos);
         float t = clamp((dist - nearPlane) / (farPlane - nearPlane), 0.0, 1.0);
         FragColor = vec4(vec3(t), 1.0);
     } else if (aov_mode == 4) {
-        // Backface: green = front, red = back
+        // Backface: green = front-facing, red = back-facing
         vec3 viewDir = normalize(cameraPos - vFragPos);
-        float facing = dot(N, viewDir);
-        FragColor = facing >= 0.0 ? vec4(0.3, 0.85, 0.3, 1.0)
-                                  : vec4(0.9, 0.2, 0.2, 1.0);
+        FragColor = dot(N, viewDir) >= 0.0 ? vec4(0.3, 0.85, 0.3, 1.0)
+                                           : vec4(0.9, 0.2,  0.2, 1.0);
     } else {
-        // None / Diffuse: flat instance color (no material system yet)
+        // None: flat instance color (rendered as wireframe via polygon mode)
         FragColor = vec4(instance_color(instanceId), 1.0);
     }
 }

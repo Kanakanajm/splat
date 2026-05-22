@@ -76,7 +76,7 @@ void DebugUi::drawGeometryPanel() {
     }
 }
 
-void DebugUi::drawPhotonPointPanel() {
+void DebugUi::drawPhotonPointPanel(uint32_t max_bounce) {
     if (!ImGui::CollapsingHeader("Photon Points")) return;
 
     ImGui::Checkbox("Show points", &state_.showPoints);
@@ -89,6 +89,16 @@ void DebugUi::drawPhotonPointPanel() {
     ImGui::RadioButton("BsdfKind",    &p, static_cast<int>(ViewState::PointAov::BsdfKind));    ImGui::SameLine();
     ImGui::RadioButton("BounceDepth", &p, static_cast<int>(ViewState::PointAov::BounceDepth));
     state_.pointAov = static_cast<ViewState::PointAov>(p);
+
+    ImGui::Checkbox("All bounces", &state_.allBounces);
+    if (!state_.allBounces) {
+        state_.bounceFilter = std::min(state_.bounceFilter, static_cast<int>(max_bounce));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SliderInt("##bounce", &state_.bounceFilter, 0, static_cast<int>(max_bounce));
+        ImGui::SameLine();
+        ImGui::Text("bounce %d", state_.bounceFilter);
+    }
 
     if (!state_.instancePointsVisible.empty()) {
         ImGui::Text("Filter by instance:");
@@ -138,7 +148,7 @@ void DebugUi::drawPhotonBeamPanel() {
 // ---- main draw --------------------------------------------------------------
 
 bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
-                   uint32_t instance_count, uint32_t medium_count) {
+                   uint32_t instance_count, uint32_t medium_count, uint32_t max_bounce) {
     if (showDemoWindow_) ImGui::ShowDemoWindow(&showDemoWindow_);
 
     // Resize filter vectors to match scene counts (fill new slots as visible).
@@ -160,7 +170,7 @@ bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
     ImGui::Separator();
 
     drawGeometryPanel();
-    drawPhotonPointPanel();
+    drawPhotonPointPanel(max_bounce);
     drawPhotonBeamPanel();
 
     ImGui::Separator();

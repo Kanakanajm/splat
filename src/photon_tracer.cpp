@@ -77,7 +77,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
             const uint32_t bsdf_id = scene_.bsdf_id_at(prim);
             const Bsdf&    bsdf    = scene_.bsdf(bsdf_id);
             if (bsdf.kind == BsdfKind::Diffuse) {
-                points_.push_back({p, bsdf_id, scene_.model().instance_id(prim)});
+                points_.push_back({p, bsdf_id, scene_.model().instance_id(prim), depth});
             }
 
             const tinybvh::bvhvec3 n   = face_normal(scene_.model(), prim);
@@ -95,7 +95,14 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
                 m = (m == in_id) ? out_id : in_id;
             }
 
-            ray = tinybvh::Ray{p, dir};
+            // Orient the unoriented face normal toward the new ray direction so the
+            // offset always pushes the origin to the side the ray is leaving toward.
+            const float ns = (n.x*dir.x + n.y*dir.y + n.z*dir.z) >= 0.0f ? 1.0f : -1.0f;
+
+            // Offset along the normal (not dir) to avoid lateral drift that could push
+            // the origin past an adjacent face at corners, desyncing the medium tracker.
+            ray = tinybvh::Ray{
+                {p.x + kEps * n.x * ns, p.y + kEps * n.y * ns, p.z + kEps * n.z * ns}, dir};
         }
     }
 }

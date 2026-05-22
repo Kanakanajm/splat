@@ -16,6 +16,8 @@ struct ViewState {
     bool showPoints = true;
     enum class PointAov : int { InstanceId, BsdfKind, BounceDepth } pointAov = PointAov::InstanceId;
     std::vector<bool> instancePointsVisible;  // per-instance; empty = all visible
+    bool allBounces      = true;   // show points from all bounce depths
+    int  bounceFilter    = 0;      // active when allBounces == false
 
     // --- Photon Beams --------------------------------------------------------
     bool showBeams = true;
@@ -34,7 +36,7 @@ public:
     void beginFrame();
     // Draws all ImGui panels; returns true if vsync was toggled.
     bool draw(const Camera& camera, bool& vsyncEnabled,
-              uint32_t instance_count, uint32_t medium_count);
+              uint32_t instance_count, uint32_t medium_count, uint32_t max_bounce);
     void endFrame();
 
     bool wantsMouse() const;
@@ -44,7 +46,7 @@ public:
 
 private:
     void drawGeometryPanel();
-    void drawPhotonPointPanel();
+    void drawPhotonPointPanel(uint32_t max_bounce);
     void drawPhotonBeamPanel();
 
     ViewState state_;

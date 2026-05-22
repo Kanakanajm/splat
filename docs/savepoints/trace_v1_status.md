@@ -25,6 +25,7 @@ Russian roulette is deferred — paths terminate only on the hard depth cap.
 | Media + free-flight + PhotonBeam emission | `include/medium.hpp`, `src/sampling.cpp`, `src/photon_tracer.cpp` | `tests/sampling_test.cpp`, `tests/photon_tracer_test.cpp` |
 | Medium-shell pass-through BSDF + medium switch | `src/bsdf.cpp`, `src/photon_tracer.cpp` | `tests/bsdf_test.cpp`, `tests/photon_tracer_test.cpp` |
 | Photon-point GL visualization (instance-id colored) | `src/scene_gl.cpp`, `shaders/point.{vs,fs}`, `src/main.cpp` | manual (app) |
+| Surface self-intersection fix (normal-based ε offset) | `src/photon_tracer.cpp` | `tests/photon_tracer_test.cpp` (tests 28–29) |
 
 ## Key API
 
@@ -51,7 +52,7 @@ class PhotonTracer {
 // Medium / BSDF
 struct Medium { float sigma_s, sigma_a; float sigma_t() const; };
 enum class BsdfKind { Diffuse, Conductor, Dielectric, MediumShell };
-struct Bsdf { BsdfKind kind; float ior; bvhvec3 sample(Rng&, incoming, normal) const; };
+struct Bsdf { BsdfKind kind; float ior; bvhvec3 color; bvhvec3 sample(Rng&, incoming, normal) const; };
 
 // Sampling
 bvhvec3 sample_cosine_hemisphere(Rng&, const bvhvec3& normal);  // PDF = cosθ/π
@@ -63,6 +64,7 @@ float   sample_free_flight(float sigma_t, float xi);            // = -ln(1-ξ)/�
 - **id 0** ⇒ default BSDF (diffuse) / vacuum medium.
 - **Long-beam variant**: beam end is the medium exit (`t_hit`), scatter point spawns the new ray.
 - **Medium switch**: `D·n < 0` (entering) → `medium_in`; `D·n > 0` (exiting) → `medium_out`. Only on `MediumShell` (and future `Dielectric`) hits.
+- **Surface ε offset**: New ray origin is `p + kEps * ns * n` where `n` is the face normal and `ns = sign(n·dir)`. Offset along the normal (not the ray direction) avoids lateral drift that would push the origin past an adjacent face at corners, desyncing the medium tracker.
 - **`TINYBVH_IMPLEMENTATION`** defined once in `src/tiny_bvh.cpp`.
 - **`aiProcess_Triangulate | aiProcess_PreTransformVertices`** — collapses node graph; each assimp mesh = one instance.
 - GL code isolated in `src/scene_gl.cpp` (app-only TU); test target stays GL-free.

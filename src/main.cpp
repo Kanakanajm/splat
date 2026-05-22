@@ -130,8 +130,9 @@ int main(int argc, char **argv) {
   std::cout << "Traced " << tracer.points().size() << " points, " << tracer.beams().size()
             << " beams" << std::endl;
 
-  Shader vizShader("shaders/point.vs", "shaders/point.fs");
-  Shader geomShader("shaders/geom.vs", "shaders/geom.fs");
+  Shader pointShader("shaders/point.vs", "shaders/point.fs");
+  Shader beamShader ("shaders/beam.vs",  "shaders/beam.fs");
+  Shader geomShader ("shaders/geom.vs",  "shaders/geom.fs");
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
@@ -150,9 +151,6 @@ int main(int argc, char **argv) {
 
     processInput(window, uiWantsMouse, uiWantsKeyboard);
 
-    glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
     // projection may change every frame (window resize / zoom)
     const float aspectRatio = framebufferHeight > 0
                                   ? static_cast<float>(framebufferWidth) /
@@ -164,25 +162,42 @@ int main(int argc, char **argv) {
 
     const ViewState& vs = debugUi->viewState();
 
+    // Depth AOV uses a white background so far-away geometry reads as white.
+    const bool depthMode = vs.showGeometry && vs.geomAov == ViewState::GeomAov::Depth;
+    glClearColor(depthMode ? 1.0f : 0.05f,
+                 depthMode ? 1.0f : 0.05f,
+                 depthMode ? 1.0f : 0.08f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     // --- Geometry pass
     if (vs.showGeometry) {
+      const int geomAov = static_cast<int>(vs.geomAov);
       setCameraUniforms(geomShader, projection, view);
-      geomShader.setInt("aov_mode", static_cast<int>(vs.geomAov));
+      geomShader.setInt("aov_mode", geomAov);
       geomShader.setVec3("cameraPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      geomShader.setVec3("lightPos", light.position.x, light.position.y, light.position.z);
       geomShader.setFloat("nearPlane", 0.1f);
-      geomShader.setFloat("farPlane", 100.0f);
-      scene.draw_geometry(geomShader, vs.instanceVisible);
+      geomShader.setFloat("farPlane", 10.0f);
+      scene.draw_geometry(geomShader, geomAov, vs.instanceVisible);
     }
 
-    // --- Photon visualization passes
-    setCameraUniforms(vizShader, projection, view);
-    vizShader.setFloat("pointSize", 3.0f);
-    if (vs.showPoints) scene.draw_points(vizShader);
-    if (vs.showBeams)  scene.draw_beams(vizShader);
+    // --- Photon point pass
+    if (vs.showPoints) {
+      setCameraUniforms(pointShader, projection, view);
+      pointShader.setFloat("pointSize", 3.0f);
+      const int bounceFilter = vs.allBounces ? -1 : vs.bounceFilter;
+      scene.draw_points(pointShader, static_cast<int>(vs.pointAov), vs.instancePointsVisible, bounceFilter);
+    }
+
+    // --- Photon beam pass
+    if (vs.showBeams) {
+      setCameraUniforms(beamShader, projection, view);
+      scene.draw_beams(beamShader);
+    }
 
     const uint32_t instance_count = rayModel.instance_count();
-    const uint32_t medium_count   = 8u;  // upper bound; filter vector resizes to fit
-    if (debugUi->draw(camera, vsyncEnabled, instance_count, medium_count)) {
+    const uint32_t medium_count   = 8u;
+    if (debugUi->draw(camera, vsyncEnabled, instance_count, medium_count, scene.max_bounce_depth())) {
       glfwSwapInterval(vsyncEnabled ? 1 : 0);
     }
     debugUi->endFrame();

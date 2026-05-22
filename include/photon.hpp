@@ -7,7 +7,8 @@
 struct PhotonPoint {
     tinybvh::bvhvec3 position;
     uint32_t         bsdf_id;
-    uint32_t         instance_id;  // owning instance, for visualization/coloring
+    uint32_t         instance_id;   // owning instance, for visualization/coloring
+    uint32_t         bounce_depth;  // which bounce produced this point (0 = first)
 };
 
 struct PhotonBeam {

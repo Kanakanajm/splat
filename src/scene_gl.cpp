@@ -121,17 +121,21 @@ void Scene::upload_geometry() {
     glBindVertexArray(0);
 }
 
-void Scene::draw_geometry(Shader& shader, const std::vector<bool>& instance_visible) const {
+void Scene::draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>& instance_visible) const {
     if (geom_vao_ == 0 || geom_ranges_.empty()) return;
 
     shader.use();
     glBindVertexArray(geom_vao_);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    // Wireframe for None and Backface; filled faces for Diffuse/Normal/Depth.
+    const bool wireframe = (aov_mode == 0 || aov_mode == 4);
+    glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(geom_ranges_.size()); ++i) {
         if (!instance_visible.empty() && i < instance_visible.size() && !instance_visible[i])
             continue;
         shader.setInt("instanceId", static_cast<int>(i));
+        const auto& col = bsdf_table_[instance_bsdf_[i]].color;
+        shader.setVec3("bsdfColor", col.x, col.y, col.z);
         const auto& r = geom_ranges_[i];
         glDrawArrays(GL_TRIANGLES, static_cast<GLint>(r.start), static_cast<GLsizei>(r.count));
     }
@@ -142,25 +146,78 @@ void Scene::draw_geometry(Shader& shader, const std::vector<bool>& instance_visi
 
 // ---- Photon Points ----------------------------------------------------------
 
-void Scene::upload_points(const std::vector<PhotonPoint>& points) {
-    // Interleaved [x, y, z, r, g, b] per point; color by instance id.
+namespace {
+
+// Build VBO data for a filtered subset of points.
+// Layout per vertex: [x, y, z, instance_id_f, bsdf_kind_f, bounce_depth_f]
+std::vector<float> encode_points(const std::vector<PhotonPoint>& points,
+                                 const std::vector<bool>& instance_visible,
+                                 int bounce_filter) {
     std::vector<float> data;
     data.reserve(points.size() * 6);
     for (const auto& p : points) {
-        const auto c = instance_color(p.instance_id);
+        if (!instance_visible.empty() &&
+            p.instance_id < instance_visible.size() &&
+            !instance_visible[p.instance_id])
+            continue;
+        if (bounce_filter >= 0 && static_cast<int>(p.bounce_depth) != bounce_filter)
+            continue;
         data.push_back(p.position.x);
         data.push_back(p.position.y);
         data.push_back(p.position.z);
-        data.push_back(c[0]);
-        data.push_back(c[1]);
-        data.push_back(c[2]);
+        data.push_back(static_cast<float>(p.instance_id));
+        data.push_back(static_cast<float>(static_cast<int>(p.bsdf_id)));
+        data.push_back(static_cast<float>(p.bounce_depth));
     }
-    point_count_ = static_cast<uint32_t>(points.size());
-    upload_interleaved(points_vao_, points_vbo_, data);
+    return data;
 }
 
-void Scene::draw_points(Shader& shader) const {
+void upload_points_vbo(unsigned int& vao, unsigned int& vbo, const std::vector<float>& data) {
+    if (vao == 0) glGenVertexArrays(1, &vao);
+    if (vbo == 0) glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(data.size() * sizeof(float)),
+                 data.data(), GL_STATIC_DRAW);
+    constexpr GLsizei stride = 6 * sizeof(float);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, stride, (void*)(4 * sizeof(float)));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, stride, (void*)(5 * sizeof(float)));
+    glBindVertexArray(0);
+}
+
+}  // namespace (points helpers)
+
+void Scene::upload_points(const std::vector<PhotonPoint>& points) {
+    points_cache_ = points;
+    points_filter_cache_.clear();
+    points_bounce_filter_cache_ = -2;
+    points_max_bounce_ = 1u;
+    for (const auto& p : points)
+        if (p.bounce_depth > points_max_bounce_) points_max_bounce_ = p.bounce_depth;
+    const auto data = encode_points(points, {}, -1);
+    point_count_ = static_cast<uint32_t>(data.size() / 6);
+    upload_points_vbo(points_vao_, points_vbo_, data);
+}
+
+void Scene::draw_points(Shader& shader, int aov_mode,
+                        const std::vector<bool>& instance_visible, int bounce_filter) {
+    if (instance_visible != points_filter_cache_ ||
+        bounce_filter    != points_bounce_filter_cache_) {
+        points_filter_cache_       = instance_visible;
+        points_bounce_filter_cache_ = bounce_filter;
+        const auto data = encode_points(points_cache_, instance_visible, bounce_filter);
+        point_count_ = static_cast<uint32_t>(data.size() / 6);
+        upload_points_vbo(points_vao_, points_vbo_, data);
+    }
     shader.use();
+    shader.setInt("aov_mode", aov_mode);
+    shader.setFloat("maxBounce", static_cast<float>(points_max_bounce_));
     glBindVertexArray(points_vao_);
     glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(point_count_));
     glBindVertexArray(0);

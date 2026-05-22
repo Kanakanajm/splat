@@ -40,10 +40,15 @@ public:
     // --- OpenGL visualization (implemented in scene_gl.cpp, app-only).
     // Upload* needs a current GL context; it builds VAO/VBOs from the scene data.
     void upload_geometry();
-    void draw_geometry(Shader& shader, const std::vector<bool>& instance_visible) const;
+    void draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>& instance_visible) const;
 
     void upload_points(const std::vector<PhotonPoint>& points);
-    void draw_points(Shader& shader) const;
+    uint32_t max_bounce_depth() const { return points_max_bounce_; }
+
+    // aov_mode matches ViewState::PointAov ordinal. Re-uploads if filters changed.
+    // bounce_filter = -1 shows all bounces; >= 0 shows only that depth.
+    void draw_points(Shader& shader, int aov_mode,
+                     const std::vector<bool>& instance_visible, int bounce_filter = -1);
     void upload_beams(const std::vector<PhotonBeam>& beams);
     void draw_beams(Shader& shader) const;
 
@@ -62,9 +67,13 @@ private:
     std::vector<InstanceRange> geom_ranges_;  // one per instance
 
     // GL handles for the photon point cloud (0 until first upload).
-    unsigned int points_vao_   = 0;
-    unsigned int points_vbo_   = 0;
-    uint32_t     point_count_  = 0;
+    unsigned int points_vao_  = 0;
+    unsigned int points_vbo_  = 0;
+    uint32_t     point_count_ = 0;
+    std::vector<PhotonPoint> points_cache_;
+    std::vector<bool>        points_filter_cache_;
+    int                      points_bounce_filter_cache_ = -2;  // -2 = uninitialized
+    uint32_t                 points_max_bounce_ = 4u;
 
     // GL handles for the photon beam lines (0 until first upload).
     unsigned int beams_vao_         = 0;

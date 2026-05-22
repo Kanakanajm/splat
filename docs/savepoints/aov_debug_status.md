@@ -87,9 +87,9 @@ Both structs gain `uint32_t bounce_depth`, filled by the tracer at store time.
 |---|---|---|
 | ~~1~~ | ~~`ViewState` + multi-panel `DebugUi` scaffold~~ ✅ | `include/debug_ui.hpp`, `src/debug_ui.cpp`, `src/main.cpp` |
 | ~~2~~ | ~~Geometry pass: upload + wireframe + per-instance show/hide~~ ✅ | `include/scene.hpp`, `src/scene_gl.cpp`, `shaders/geom.{vs,fs}` |
-| ~~3~~ | ~~Geometry AOV modes: Normal, Depth, Backface~~ ✅ | `shaders/geom.fs` |
-| 4 | Photon point AOVs + per-instance filter | `include/photon.hpp`, `src/photon_tracer.cpp`, `src/scene_gl.cpp`, `shaders/point.{vs,fs}` |
-| 5 | Photon beam AOVs + per-medium filter | `include/photon.hpp`, `src/photon_tracer.cpp`, `src/scene_gl.cpp`, `shaders/point.{vs,fs}` |
+| ~~3~~ | ~~Geometry AOV modes: Normal, Depth, Backface~~ ✅ | `shaders/geom.fs`, `src/scene_gl.cpp`, `include/bsdf.hpp` |
+| ~~4~~ | ~~Photon point AOVs + bounce filter slider~~ ✅ | `include/photon.hpp`, `src/photon_tracer.cpp`, `src/scene_gl.cpp`, `shaders/point.{vs,fs}` |
+| 5 | Photon beam AOVs + per-medium filter | `include/photon.hpp`, `src/photon_tracer.cpp`, `src/scene_gl.cpp`, `shaders/beam.{vs,fs}` |
 
 ## Notes
 
@@ -99,6 +99,10 @@ Both structs gain `uint32_t bounce_depth`, filled by the tracer at store time.
 - Geometry VBO layout: `[x,y,z, nx,ny,nz]` per vertex; face normals computed from cross product at upload time.
 - Per-instance draw calls (one `glDrawArrays` per instance) allow skipping hidden instances without re-uploading.
 - `geom.fs` `aov_mode` must match `ViewState::GeomAov` enum ordinals exactly (bug-prone — keep in sync).
-- None and Diffuse both show flat instance palette color; Diffuse will diverge when a material system is added.
+- **None** and **Backface** use `glPolygonMode(GL_LINE)`; all other modes use `GL_FILL`.
+- **Diffuse** mode: Lambertian shading `bsdfColor * max(dot(N, L), 0)` where `bsdfColor` comes from `Bsdf::color` (default `{0.8, 0.8, 0.8}`). Set per draw call via `setVec3("bsdfColor", ...)`. Instance palette is only used in None mode.
+- **Depth** mode: `main.cpp` switches `glClearColor` to white when depth mode is active, so background reads as far.
+- **BounceDepth** point AOV: each point colored by `bounce_depth / maxBounce` (blue→red heatmap). `maxBounce` is computed from actual data at upload time, not the tracer depth cap. In the all-bounces view the display is dominated by low-depth (blue) points — this is expected due to exponential population decay per bounce.
+- **Bounce filter slider**: filters the point cloud to a single depth level; a separate filter re-uploads the VBO only when the filter changes.
 
-## Status: On-going (3/5 tasks done)
+## Status: On-going (4/5 tasks done)
