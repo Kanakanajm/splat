@@ -9,10 +9,13 @@
 #include <cstdint>
 #include <vector>
 
-// V1 photon tracer: emit N rays from the light, then bounce each through the
-// scene up to `max_depth` diffuse reflections (vacuum only — no media yet).
-// A PhotonPoint is recorded at every diffuse surface hit; non-diffuse surfaces
-// scatter without storing a point. No Russian roulette: photon power is not yet
+// V1 photon tracer: emit N rays from the light, then march each through the
+// scene up to `max_depth` interactions. At each step it free-flight samples the
+// current medium: a medium scatter (t_media < t_hit) records a long PhotonBeam
+// to the medium exit and respawns isotropically; otherwise a surface hit records
+// a PhotonPoint (diffuse only) and scatters via the BSDF. Vacuum (sigma_t == 0)
+// never scatters in-medium. Medium switching on refraction is not wired yet, so
+// the current medium stays the light's. No Russian roulette: photon power is not
 // tracked, so paths terminate only at the hard depth cap or on a miss.
 class PhotonTracer {
 public:

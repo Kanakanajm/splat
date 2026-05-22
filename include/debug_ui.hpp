@@ -5,6 +5,8 @@ struct GLFWwindow;
 
 class DebugUi {
 public:
+  enum class VizMode { Points, Beams, Both };
+
   explicit DebugUi(GLFWwindow *window);
   ~DebugUi();
 
@@ -18,6 +20,9 @@ public:
   bool wantsMouse() const;
   bool wantsKeyboard() const;
 
+  VizMode vizMode() const { return vizMode_; }
+
 private:
   bool showDemoWindow = false;
+  VizMode vizMode_ = VizMode::Beams;
 };

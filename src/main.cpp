@@ -8,13 +8,46 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/string_cast.hpp>
 
-#include "model.hpp"
 #include "shader.hpp"
 #include "camera.hpp"
 #include "debug_ui.hpp"
-#include "stb_image.h"
+
+#include "ray_model.hpp"
+#include "scene.hpp"
+#include "point_light.hpp"
+#include "photon_tracer.hpp"
+#include "random.hpp"
+#include "tiny_bvh.h"
+
+#include <algorithm>
 #include <iostream>
+#include <limits>
 #include <memory>
+#include <string>
+#include <vector>
+
+namespace {
+// Axis-aligned cube of half-extent h centered at the origin (12 triangles,
+// tinybvh fat-tri layout). Winding is arbitrary — the medium shell flips on
+// crossing regardless of normal direction.
+std::vector<tinybvh::bvhvec4> make_box(float h) {
+  const tinybvh::bvhvec3 c[8] = {
+      {-h, -h, -h}, {h, -h, -h}, {h, h, -h}, {-h, h, -h},
+      {-h, -h, h},  {h, -h, h},  {h, h, h},  {-h, h, h},
+  };
+  const int faces[6][4] = {
+      {0, 1, 2, 3}, {5, 4, 7, 6}, {4, 0, 3, 7}, {1, 5, 6, 2}, {4, 5, 1, 0}, {3, 2, 6, 7},
+  };
+  std::vector<tinybvh::bvhvec4> v;
+  v.reserve(36);
+  auto push = [&](const tinybvh::bvhvec3 &p) { v.emplace_back(p.x, p.y, p.z, 0.0f); };
+  for (const auto &f : faces) {
+    push(c[f[0]]); push(c[f[1]]); push(c[f[2]]);
+    push(c[f[0]]); push(c[f[2]]); push(c[f[3]]);
+  }
+  return v;
+}
+}  // namespace
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
@@ -22,7 +55,8 @@ void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard);
 // callback when mouseLookEnabled changes
 void setMouseLook(GLFWwindow *window, bool enabled);
-unsigned int loadTexture(const char *path);
+// set the shared camera matrices on any shader (identity model)
+void setCameraUniforms(Shader &shader, const glm::mat4 &projection, const glm::mat4 &view);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -30,8 +64,8 @@ const unsigned int SCR_HEIGHT = 600;
 int framebufferWidth = SCR_WIDTH;
 int framebufferHeight = SCR_HEIGHT;
 
-// camera
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+// camera (frames the origin-centered nested cubes; fly with WASD + right-drag)
+Camera camera(glm::vec3(0.0f, 0.0f, 2.0f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -42,9 +76,7 @@ bool uiWantsMouse = false;
 float deltaTime = 0.0f; // time between current frame and last frame
 float lastFrame = 0.0f;
 
-glm::vec3 lightPos(1.2f, 1.0f, 2.0f);
-
-int main() {
+int main(int argc, char **argv) {
   // glfw init check
   if (!glfwInit()) {
     std::cerr << "GLFW init failed\n";
@@ -89,13 +121,67 @@ int main() {
 
   // opengl will discard fragments that failed depth test
   glEnable(GL_DEPTH_TEST);
+  // let the vertex shader control point size via gl_PointSize
+  glEnable(GL_PROGRAM_POINT_SIZE);
 
-      // tell stb_image.h to flip loaded texture's on the y-axis (before loading model).
-    stbi_set_flip_vertically_on_load(true);
+  // --- Photon scene setup ---------------------------------------------------
+  // No CLI arg: procedural three nested medium-shell cubes (containment debug
+  // scene) — regions vacuum | medium 1 | medium 2 | medium 3, lit from above.
+  // With a CLI arg: load that mesh file and make its tall box a single medium.
+  const bool useFile = argc > 1;
 
-  Shader ourShader("shaders/color.vs", "shaders/color.fs");
+  std::vector<tinybvh::bvhvec4> verts;
+  std::vector<uint32_t>         inst;
+  if (!useFile) {
+    const float halves[3] = {0.6f, 0.4f, 0.2f};
+    for (uint32_t i = 0; i < 3; ++i) {
+      const auto b = make_box(halves[i]);
+      verts.insert(verts.end(), b.begin(), b.end());
+      inst.insert(inst.end(), 12u, i);
+    }
+  }
 
-  Model ourModel("assets/models/backpack/backpack.obj");
+  RayModel rayModel = useFile ? RayModel(std::string(argv[1]))
+                              : RayModel(std::move(verts), std::move(inst), 3u);
+  std::cout << "Scene: " << (useFile ? argv[1] : "3 nested medium cubes") << std::endl;
+
+  tinybvh::BVH bvh;
+  bvh.Build(rayModel.triangles().data(), rayModel.triangle_count());
+
+  Scene scene(rayModel);
+  scene.set_bsdf(1u, Bsdf{BsdfKind::MediumShell, 1.0f});  // shared pass-through shell
+
+  PointLight light{tinybvh::bvhvec3{0.0f, 1.2f, 2.0f}, 0u};  // above the scene, in vacuum
+
+  if (useFile) {
+    // Turn the tall box into a participating-medium volume distinct from the
+    // light's medium (vacuum); photons crossing inward enter medium 1 and scatter.
+    scene.set_instance_bsdf(6u, 1u);
+    scene.set_instance_medium(6u, /*in=*/2u, /*out=*/0u);
+    scene.set_medium(2u, Medium{/*sigma_s=*/8.0f, /*sigma_a=*/1.0f});
+    light = PointLight{tinybvh::bvhvec3{0.0f, 1.48f, 2.18f}, 0u};
+    std::cout << "Medium box = instance " << 6u << std::endl;
+  } else {
+    // Each shell separates its inside medium (i+1) from the medium just outside (i).
+    for (uint32_t i = 0; i < 3; ++i) scene.set_instance_bsdf(i, 1u);
+    scene.set_instance_medium(0u, /*in=*/1u, /*out=*/0u);
+    scene.set_instance_medium(1u, /*in=*/2u, /*out=*/1u);
+    scene.set_instance_medium(2u, /*in=*/3u, /*out=*/2u);
+    scene.set_medium(1u, Medium{/*sigma_s=*/4.0f, /*sigma_a=*/0.0f});
+    scene.set_medium(2u, Medium{/*sigma_s=*/4.0f, /*sigma_a=*/0.0f});
+    scene.set_medium(3u, Medium{/*sigma_s=*/4.0f, /*sigma_a=*/0.0f});
+  }
+
+  PhotonTracer tracer(scene, bvh, light);
+  Rng rng(0xDECAFu);
+  tracer.trace(/*photon_count=*/30000u, /*max_depth=*/64u, rng);
+  scene.upload_points(tracer.points());
+  scene.upload_beams(tracer.beams());
+  std::cout << "Traced " << tracer.points().size() << " points, " << tracer.beams().size()
+            << " beams" << std::endl;
+
+  // One shader for both passes (position + color); gl_PointSize is ignored for lines.
+  Shader vizShader("shaders/point.vs", "shaders/point.fs");
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
@@ -114,42 +200,26 @@ int main() {
 
     processInput(window, uiWantsMouse, uiWantsKeyboard);
 
-    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+    glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    ourShader.use();
-
-    // pass projection matrix to shader (note that in this case it could change
-    // every frame)
+    // projection may change every frame (window resize / zoom)
     const float aspectRatio = framebufferHeight > 0
                                   ? static_cast<float>(framebufferWidth) /
                                         static_cast<float>(framebufferHeight)
                                   : 1.0f;
-    glm::mat4 projection =
+    const glm::mat4 projection =
         glm::perspective(glm::radians(camera.Zoom), aspectRatio, 0.1f, 100.0f);
-    ourShader.setMat4("projection", projection);
+    const glm::mat4 view = camera.GetViewMatrix();
 
-    // camera/view transformation
-    glm::mat4 view = camera.GetViewMatrix();
-    ourShader.setMat4("view", view);
-
-    glm::mat4 model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-    model = glm::scale(model, glm::vec3(1.0f));
-    ourShader.setMat4("model", model);
-
-    ourShader.setVec3("viewPos", camera.Position.x, camera.Position.y, camera.Position.z); 
-
-    ourShader.setVec3("light.ambient",  1.0f, 1.0f, 1.0f);
-    ourShader.setVec3("light.diffuse",  1.0f, 1.0f, 1.0f); // darken diffuse light a bit
-    ourShader.setVec3("light.specular", 1.0f, 1.0f, 1.0f); 
-    ourShader.setVec3("light.position", lightPos.x, lightPos.y, lightPos.z);
-
-    ourModel.Draw(ourShader);
-
-
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-
+    // --- Photon visualization pass(es), selected by the ImGui toggle.
+    const DebugUi::VizMode mode = debugUi->vizMode();
+    setCameraUniforms(vizShader, projection, view);
+    vizShader.setFloat("pointSize", 3.0f);
+    if (mode == DebugUi::VizMode::Points || mode == DebugUi::VizMode::Both)
+      scene.draw_points(vizShader);
+    if (mode == DebugUi::VizMode::Beams || mode == DebugUi::VizMode::Both)
+      scene.draw_beams(vizShader);
 
     if (debugUi->draw(camera, vsyncEnabled)) {
       glfwSwapInterval(vsyncEnabled ? 1 : 0);
@@ -257,41 +327,11 @@ void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
   camera.ProcessMouseScroll(static_cast<float>(yoffset));
 }
 
-// utility function for loading a 2D texture from file
-// ---------------------------------------------------
-unsigned int loadTexture(char const * path)
-{
-    unsigned int textureID;
-    glGenTextures(1, &textureID);
-
-    int width, height, nrComponents;
-    unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
-    if (data)
-    {
-        GLenum format;
-        if (nrComponents == 1)
-            format = GL_RED;
-        else if (nrComponents == 3)
-            format = GL_RGB;
-        else if (nrComponents == 4)
-            format = GL_RGBA;
-
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        stbi_image_free(data);
-    }
-    else
-    {
-        std::cout << "Texture failed to load at path: " << path << std::endl;
-        stbi_image_free(data);
-    }
-
-    return textureID;
+// bind a shader and upload the shared camera matrices (model = identity)
+// ----------------------------------------------------------------------
+void setCameraUniforms(Shader &shader, const glm::mat4 &projection, const glm::mat4 &view) {
+  shader.use();
+  shader.setMat4("projection", projection);
+  shader.setMat4("view", view);
+  shader.setMat4("model", glm::mat4(1.0f));
 }

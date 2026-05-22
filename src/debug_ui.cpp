@@ -47,6 +47,15 @@ bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled) {
               camera.Position.y, camera.Position.z);
   ImGui::Text("Camera pitch & yaw: %.2f, %.2f deg", camera.Pitch,  camera.Yaw);
   ImGui::Text("Camera zoom: %.2f", camera.Zoom);
+  ImGui::Separator();
+  ImGui::Text("Photon visualization:");
+  int mode = static_cast<int>(vizMode_);
+  ImGui::RadioButton("Points", &mode, static_cast<int>(VizMode::Points));
+  ImGui::SameLine();
+  ImGui::RadioButton("Beams", &mode, static_cast<int>(VizMode::Beams));
+  ImGui::SameLine();
+  ImGui::RadioButton("Both", &mode, static_cast<int>(VizMode::Both));
+  vizMode_ = static_cast<VizMode>(mode);
   ImGui::Checkbox("Show ImGui demo", &showDemoWindow);
   ImGui::End();
 

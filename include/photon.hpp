@@ -7,6 +7,7 @@
 struct PhotonPoint {
     tinybvh::bvhvec3 position;
     uint32_t         bsdf_id;
+    uint32_t         instance_id;  // owning instance, for visualization/coloring
 };
 
 struct PhotonBeam {

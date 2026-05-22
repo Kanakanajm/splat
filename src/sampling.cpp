@@ -34,3 +34,7 @@ tinybvh::bvhvec3 sample_cosine_hemisphere(Rng& rng, const tinybvh::bvhvec3& norm
         x * t1.y + y * t2.y + z * normal.y,
         x * t1.z + y * t2.z + z * normal.z};
 }
+
+float sample_free_flight(float sigma_t, float xi) {
+    return -std::log(1.0f - xi) / sigma_t;
+}

@@ -1,10 +1,14 @@
 #pragma once
 
 #include "bsdf.hpp"
+#include "medium.hpp"
+#include "photon.hpp"
 #include "ray_model.hpp"
 
 #include <cstdint>
 #include <vector>
+
+class Shader;  // GL draw helpers take a Shader; defined in scene_gl.cpp (app only)
 
 // Scene-side attribution layered on top of RayModel's geometry. Holds per-instance
 // bsdf and medium-inside/-outside ids; defaults all to 0. The tracer looks up
@@ -26,7 +30,20 @@ public:
     const Bsdf& bsdf(uint32_t bsdf_id) const { return bsdf_table_[bsdf_id]; }
     const Bsdf& bsdf_at(uint32_t prim) const { return bsdf_table_[bsdf_id_at(prim)]; }
 
+    // Medium table keyed by medium id. Id 0 is vacuum; set_medium grows the
+    // table as needed, leaving gaps as default-constructed (vacuum).
+    void set_medium(uint32_t medium_id, const Medium& medium);
+    const Medium& medium(uint32_t medium_id) const { return medium_table_[medium_id]; }
+
     const RayModel& model() const { return model_; }
+
+    // --- OpenGL visualization (implemented in scene_gl.cpp, app-only).
+    // Upload* needs a current GL context; it builds a VAO/VBO of interleaved
+    // position + color. Points are colored by instance id, beams by medium id.
+    void upload_points(const std::vector<PhotonPoint>& points);
+    void draw_points(Shader& shader) const;
+    void upload_beams(const std::vector<PhotonBeam>& beams);
+    void draw_beams(Shader& shader) const;
 
 private:
     const RayModel&       model_;
@@ -34,4 +51,15 @@ private:
     std::vector<uint32_t> instance_medium_in_;
     std::vector<uint32_t> instance_medium_out_;
     std::vector<Bsdf>     bsdf_table_;
+    std::vector<Medium>   medium_table_;
+
+    // GL handles for the photon point cloud (0 until first upload).
+    unsigned int points_vao_   = 0;
+    unsigned int points_vbo_   = 0;
+    uint32_t     point_count_  = 0;
+
+    // GL handles for the photon beam lines (0 until first upload).
+    unsigned int beams_vao_         = 0;
+    unsigned int beams_vbo_         = 0;
+    uint32_t     beam_vertex_count_ = 0;  // 2 vertices per beam
 };

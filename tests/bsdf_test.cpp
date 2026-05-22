@@ -106,6 +106,19 @@ TEST_CASE("Bsdf: diffuse handles a back-facing geometric normal", "[bsdf]") {
     }
 }
 
+TEST_CASE("Bsdf: medium shell passes the ray straight through", "[bsdf]") {
+    Rng rng{77};
+    const Bsdf shell{BsdfKind::MediumShell, 1.0f};
+    const bvhvec3 normal{0.0f, 0.0f, 1.0f};
+    const bvhvec3 incoming = normalize({0.2f, -0.3f, -1.0f});
+
+    const bvhvec3 out = shell.sample(rng, incoming, normal);
+    // No deflection: outgoing == incoming regardless of the normal orientation.
+    REQUIRE(out.x == Catch::Approx(incoming.x));
+    REQUIRE(out.y == Catch::Approx(incoming.y));
+    REQUIRE(out.z == Catch::Approx(incoming.z));
+}
+
 TEST_CASE("Scene: bsdf table defaults id 0 to diffuse and stores entries", "[bsdf][scene]") {
     // Minimal single-triangle synthetic model: one instance.
     std::vector<tinybvh::bvhvec4> tris = {
@@ -121,4 +134,23 @@ TEST_CASE("Scene: bsdf table defaults id 0 to diffuse and stores entries", "[bsd
     REQUIRE(scene.bsdf(3).ior == Catch::Approx(1.5f));
     // Untouched ids between fall back to default diffuse.
     REQUIRE(scene.bsdf(1).kind == BsdfKind::Diffuse);
+}
+
+TEST_CASE("Scene: medium table defaults id 0 to vacuum and stores entries", "[medium][scene]") {
+    std::vector<tinybvh::bvhvec4> tris = {
+        {0.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}};
+    std::vector<uint32_t> inst = {0u};
+    RayModel model{std::move(tris), std::move(inst), 1u};
+    Scene scene{model};
+
+    // Id 0 is vacuum: no scattering or absorption.
+    REQUIRE(scene.medium(0).sigma_s == 0.0f);
+    REQUIRE(scene.medium(0).sigma_a == 0.0f);
+    REQUIRE(scene.medium(0).sigma_t() == 0.0f);
+
+    scene.set_medium(2u, Medium{/*sigma_s=*/1.5f, /*sigma_a=*/0.5f});
+    REQUIRE(scene.medium(2).sigma_s == Catch::Approx(1.5f));
+    REQUIRE(scene.medium(2).sigma_t() == Catch::Approx(2.0f));
+    // Gap id falls back to vacuum.
+    REQUIRE(scene.medium(1).sigma_t() == 0.0f);
 }

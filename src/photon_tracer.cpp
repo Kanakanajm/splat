@@ -1,6 +1,8 @@
 #include "photon_tracer.hpp"
 
 #include "bsdf.hpp"
+#include "medium.hpp"
+#include "sampling.hpp"
 
 namespace {
 
@@ -21,31 +23,79 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
     beams_.clear();
     points_.reserve(photon_count);
 
-    constexpr float kEps = 1e-4f;  // ray-origin offset to escape the surface just hit
+    constexpr float kEps = 1e-4f;  // ray-origin offset to escape the interaction point
 
     for (uint32_t i = 0; i < photon_count; ++i) {
         tinybvh::Ray ray = light_.emit_ray(rng);
+        uint32_t     m   = light_.medium_id;  // current medium (initially the light's)
 
         for (uint32_t depth = 0; depth < max_depth; ++depth) {
             bvh_.Intersect(ray);
-            if (ray.hit.t >= BVH_FAR) break;
+            const bool  hit   = ray.hit.t < BVH_FAR;
+            const float t_hit = ray.hit.t;  // BVH_FAR when there is no surface
+
+            // Free-flight: only participating media (sigma_t > 0) scatter; vacuum never does.
+            const float sigma_t = scene_.medium(m).sigma_t();
+            const float t_media = sigma_t > 0.0f
+                                      ? sample_free_flight(sigma_t, rng.uniform())
+                                      : BVH_FAR;
+
+            if (t_media < t_hit) {
+                // A participating medium with no surface ahead means the photon has
+                // escaped into open space (V1 media are bounded by geometry; this also
+                // guards against medium desync at coincident surfaces). Terminate.
+                if (!hit) break;
+
+                // (a) Medium scatter event at t_media. Record a "long beam" from the
+                // ray origin to the medium exit (the surface at t_hit), then respawn
+                // isotropically from the scatter point.
+                const tinybvh::bvhvec3 p{ray.O.x + t_media * ray.D.x,
+                                         ray.O.y + t_media * ray.D.y,
+                                         ray.O.z + t_media * ray.D.z};
+
+                beams_.push_back({p,
+                                  {ray.O.x + t_hit * ray.D.x,
+                                   ray.O.y + t_hit * ray.D.y,
+                                   ray.O.z + t_hit * ray.D.z},
+                                  m});
+
+                
+                const tinybvh::bvhvec3 dir = sample_unit_sphere(rng);
+                ray = tinybvh::Ray{p,
+                                   dir};
+                continue;
+            }
+
+            // (b) Surface hit.
+            if (!hit) break;
 
             const uint32_t prim = ray.hit.prim;
-            const tinybvh::bvhvec3 p{
-                ray.O.x + ray.hit.t * ray.D.x,
-                ray.O.y + ray.hit.t * ray.D.y,
-                ray.O.z + ray.hit.t * ray.D.z};
+            const tinybvh::bvhvec3 p{ray.O.x + t_hit * ray.D.x,
+                                     ray.O.y + t_hit * ray.D.y,
+                                     ray.O.z + t_hit * ray.D.z};
 
             const uint32_t bsdf_id = scene_.bsdf_id_at(prim);
             const Bsdf&    bsdf    = scene_.bsdf(bsdf_id);
             if (bsdf.kind == BsdfKind::Diffuse) {
-                points_.push_back({p, bsdf_id});
+                points_.push_back({p, bsdf_id, scene_.model().instance_id(prim)});
             }
 
             const tinybvh::bvhvec3 n   = face_normal(scene_.model(), prim);
             const tinybvh::bvhvec3 dir = bsdf.sample(rng, ray.D, n);
-            const tinybvh::bvhvec3 o{p.x + kEps * dir.x, p.y + kEps * dir.y, p.z + kEps * dir.z};
-            ray = tinybvh::Ray{o, dir};
+
+            // Medium switch on a transmissive (pass-through) event: flip between the
+            // surface's inside/outside media. Flipping (rather than picking by the
+            // normal's sign) is robust to inconsistent face winding, so a closed
+            // shell contains its medium regardless of how the mesh is wound.
+            // Diffuse/specular reflections keep the current medium; dielectric
+            // refraction is deferred (see trace_v1_status.md chunk 6).
+            if (bsdf.kind == BsdfKind::MediumShell) {
+                const uint32_t in_id  = scene_.medium_in_at(prim);
+                const uint32_t out_id = scene_.medium_out_at(prim);
+                m = (m == in_id) ? out_id : in_id;
+            }
+
+            ray = tinybvh::Ray{p, dir};
         }
     }
 }

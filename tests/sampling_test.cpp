@@ -32,6 +32,34 @@ TEST_CASE("Rng: uniform output stays in half-open unit interval", "[rng]") {
     }
 }
 
+TEST_CASE("sample_free_flight: matches -ln(1-xi)/sigma_t", "[sampling][medium]") {
+    REQUIRE(sample_free_flight(2.0f, 0.0f) == Catch::Approx(0.0f));
+    REQUIRE(sample_free_flight(1.0f, 1.0f - std::exp(-3.0f)) == Catch::Approx(3.0f));
+    REQUIRE(sample_free_flight(4.0f, 1.0f - std::exp(-8.0f)) == Catch::Approx(2.0f));
+}
+
+TEST_CASE("sample_free_flight: distances are exponential with mean 1/sigma_t",
+          "[sampling][medium]") {
+    constexpr int   N       = 200000;
+    constexpr float sigma_t = 2.0f;
+    Rng rng{321};
+
+    double sum = 0.0;
+    int    beyond_mean = 0;
+    for (int i = 0; i < N; ++i) {
+        const float d = sample_free_flight(sigma_t, rng.uniform());
+        REQUIRE(d >= 0.0f);
+        sum += d;
+        if (d > 1.0f / sigma_t) ++beyond_mean;
+    }
+    const double mean = sum / N;
+    const double frac = static_cast<double>(beyond_mean) / N;
+    INFO("mean=" << mean << " P(d>1/sigma_t)=" << frac);
+    REQUIRE(std::fabs(mean - 1.0 / sigma_t) < 0.01);
+    // Exponential tail: P(d > 1/sigma_t) = e^-1 ≈ 0.3679.
+    REQUIRE(std::fabs(frac - std::exp(-1.0)) < 0.01);
+}
+
 TEST_CASE("sample_unit_sphere: all samples are unit length", "[sampling][sphere]") {
     Rng rng{7};
     for (int i = 0; i < 10000; ++i) {

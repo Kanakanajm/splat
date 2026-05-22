@@ -6,6 +6,7 @@ Details see `docs/project/overview.md`
 # Rules
 - Keep answers concise
 - Keep code changes minimum, split target into smaller tasks if necessary
+- Do not debug image, let me judge it (except for tests).
 
 # Dev Workflow
 We break the whole project into small chunk and each time we will only tackle one of them.
@@ -48,4 +49,6 @@ ctest --test-dir build --output-on-failure
 See `docs/git/branches.md`
 
 ### Savepoints
-Currently working on `docs/project/trace_v1_status.md`
+Record meaningful progress checkpoints under `docs/savepoints`
+See `docs/savepoints/overview.md`
+
