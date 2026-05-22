@@ -9,15 +9,17 @@
 #include <cstdint>
 #include <vector>
 
-// V1 single-bounce skeleton: emit N rays from the light, BVH closest-hit, store
-// each surface hit as a PhotonPoint with bsdf_id sourced from Scene. No BSDFs,
-// no media, no bounces yet.
+// V1 photon tracer: emit N rays from the light, then bounce each through the
+// scene up to `max_depth` diffuse reflections (vacuum only — no media yet).
+// A PhotonPoint is recorded at every diffuse surface hit; non-diffuse surfaces
+// scatter without storing a point. No Russian roulette: photon power is not yet
+// tracked, so paths terminate only at the hard depth cap or on a miss.
 class PhotonTracer {
 public:
     PhotonTracer(const Scene& scene, const tinybvh::BVH& bvh, const PointLight& light)
         : scene_(scene), bvh_(bvh), light_(light) {}
 
-    void trace(uint32_t photon_count, Rng& rng);
+    void trace(uint32_t photon_count, uint32_t max_depth, Rng& rng);
 
     const std::vector<PhotonPoint>& points() const { return points_; }
     const std::vector<PhotonBeam>&  beams()  const { return beams_;  }

@@ -64,12 +64,13 @@ TEST_CASE("PhotonTracer: stored PhotonPoint.bsdf_id comes from Scene assignment"
     Scene scene{model};
     constexpr uint32_t kAssignedBsdf = 42u;
     scene.set_instance_bsdf(/*instance=*/0u, kAssignedBsdf);
+    scene.set_bsdf(kAssignedBsdf, Bsdf{BsdfKind::Diffuse, 1.0f});
 
     PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 3.0f}, /*medium_id=*/0u};
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{0xC0FFEEu};
 
-    tracer.trace(10000, rng);
+    tracer.trace(10000, /*max_depth=*/1, rng);
     REQUIRE(!tracer.points().empty());
     for (const auto& p : tracer.points()) {
         REQUIRE(p.bsdf_id == kAssignedBsdf);

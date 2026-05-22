@@ -21,6 +21,7 @@ add_executable(SplatApp
     src/point_light.cpp
     src/photon_tracer.cpp
     src/scene.cpp
+    src/bsdf.cpp
     src/mesh.cpp
     src/model.cpp
     external/glad/src/glad.c
