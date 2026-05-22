@@ -1,28 +1,52 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
 class Camera;
 struct GLFWwindow;
 
+struct ViewState {
+    // --- Geometry ------------------------------------------------------------
+    bool showGeometry = false;
+    enum class GeomAov : int { None, Diffuse, Normal, Depth, Backface } geomAov = GeomAov::None;
+    std::vector<bool> instanceVisible;  // per-instance; empty = all visible
+
+    // --- Photon Points -------------------------------------------------------
+    bool showPoints = true;
+    enum class PointAov : int { InstanceId, BsdfKind, BounceDepth } pointAov = PointAov::InstanceId;
+    std::vector<bool> instancePointsVisible;  // per-instance; empty = all visible
+
+    // --- Photon Beams --------------------------------------------------------
+    bool showBeams = true;
+    enum class BeamAov : int { MediumId, T, BounceDepth, Length } beamAov = BeamAov::MediumId;
+    std::vector<bool> mediumBeamsVisible;  // per-medium; empty = all visible
+};
+
 class DebugUi {
 public:
-  enum class VizMode { Points, Beams, Both };
+    explicit DebugUi(GLFWwindow* window);
+    ~DebugUi();
 
-  explicit DebugUi(GLFWwindow *window);
-  ~DebugUi();
+    DebugUi(const DebugUi&) = delete;
+    DebugUi& operator=(const DebugUi&) = delete;
 
-  DebugUi(const DebugUi &) = delete;
-  DebugUi &operator=(const DebugUi &) = delete;
+    void beginFrame();
+    // Draws all ImGui panels; returns true if vsync was toggled.
+    bool draw(const Camera& camera, bool& vsyncEnabled,
+              uint32_t instance_count, uint32_t medium_count);
+    void endFrame();
 
-  void beginFrame();
-  bool draw(const Camera &camera, bool &vsyncEnabled);
-  void endFrame();
+    bool wantsMouse() const;
+    bool wantsKeyboard() const;
 
-  bool wantsMouse() const;
-  bool wantsKeyboard() const;
-
-  VizMode vizMode() const { return vizMode_; }
+    const ViewState& viewState() const { return state_; }
 
 private:
-  bool showDemoWindow = false;
-  VizMode vizMode_ = VizMode::Beams;
+    void drawGeometryPanel();
+    void drawPhotonPointPanel();
+    void drawPhotonBeamPanel();
+
+    ViewState state_;
+    bool showDemoWindow_ = false;
 };

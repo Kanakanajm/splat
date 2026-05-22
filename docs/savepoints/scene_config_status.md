@@ -74,9 +74,15 @@ The procedural (no-file) path in `main.cpp` is unchanged.
 
 | # | Task | Files |
 |---|---|---|
-| 1 | CMake: link `nlohmann_json` | `CMakeLists.txt` |
-| 2 | `SceneConfig`: parse + validate + apply | `include/scene_config.hpp`, `src/scene_config.cpp` |
-| 3 | `main.cpp`: replace hardcoded setup with `SceneConfig::load` | `src/main.cpp` |
-| 4 | Write cornell box sidecar JSON | `assets/models/cornell-box/CornellBox-Original_fixed.json` |
+| ~~1~~ | ~~CMake: link `nlohmann_json`~~ ✅ | `CMakeLists.txt`, `external/nlohmann/json.hpp`, `src/json.cpp` |
+| ~~2~~ | ~~`SceneConfig`: parse + validate + apply~~ ✅ | `include/scene_config.hpp`, `src/scene_config.cpp` |
+| ~~3~~ | ~~`main.cpp`: replace hardcoded setup with `SceneConfig::load`~~ ✅ | `src/main.cpp` |
+| ~~4~~ | ~~Write cornell box sidecar JSON~~ ✅ | `assets/models/cornell-box/CornellBox-Original_fixed.json` |
 
-## Status: Planned
+## Notes
+
+- `RayModel` gained `instance_name(id)` and `find_instance(name)` — filled from `aiMesh::mName` in the assimp constructor; empty for procedural models.
+- `SceneConfig::apply` returns the `PointLight` directly (medium ID resolved during apply).
+- nlohmann/json vendored locally: `external/nlohmann/json.hpp` + `src/json.cpp` (implementation TU), same pattern as tinybvh.
+
+## Status: Done

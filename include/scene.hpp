@@ -38,8 +38,10 @@ public:
     const RayModel& model() const { return model_; }
 
     // --- OpenGL visualization (implemented in scene_gl.cpp, app-only).
-    // Upload* needs a current GL context; it builds a VAO/VBO of interleaved
-    // position + color. Points are colored by instance id, beams by medium id.
+    // Upload* needs a current GL context; it builds VAO/VBOs from the scene data.
+    void upload_geometry();
+    void draw_geometry(Shader& shader, const std::vector<bool>& instance_visible) const;
+
     void upload_points(const std::vector<PhotonPoint>& points);
     void draw_points(Shader& shader) const;
     void upload_beams(const std::vector<PhotonBeam>& beams);
@@ -52,6 +54,12 @@ private:
     std::vector<uint32_t> instance_medium_out_;
     std::vector<Bsdf>     bsdf_table_;
     std::vector<Medium>   medium_table_;
+
+    // GL handles for scene geometry (0 until first upload).
+    unsigned int geom_vao_ = 0;
+    unsigned int geom_vbo_ = 0;
+    struct InstanceRange { uint32_t start; uint32_t count; };
+    std::vector<InstanceRange> geom_ranges_;  // one per instance
 
     // GL handles for the photon point cloud (0 until first upload).
     unsigned int points_vao_   = 0;

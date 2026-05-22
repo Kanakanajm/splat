@@ -27,28 +27,6 @@
 #include <string>
 #include <vector>
 
-namespace {
-// Axis-aligned cube of half-extent h centered at the origin (12 triangles,
-// tinybvh fat-tri layout). Winding is arbitrary — the medium shell flips on
-// crossing regardless of normal direction.
-std::vector<tinybvh::bvhvec4> make_box(float h) {
-  const tinybvh::bvhvec3 c[8] = {
-      {-h, -h, -h}, {h, -h, -h}, {h, h, -h}, {-h, h, -h},
-      {-h, -h, h},  {h, -h, h},  {h, h, h},  {-h, h, h},
-  };
-  const int faces[6][4] = {
-      {0, 1, 2, 3}, {5, 4, 7, 6}, {4, 0, 3, 7}, {1, 5, 6, 2}, {4, 5, 1, 0}, {3, 2, 6, 7},
-  };
-  std::vector<tinybvh::bvhvec4> v;
-  v.reserve(36);
-  auto push = [&](const tinybvh::bvhvec3 &p) { v.emplace_back(p.x, p.y, p.z, 0.0f); };
-  for (const auto &f : faces) {
-    push(c[f[0]]); push(c[f[1]]); push(c[f[2]]);
-    push(c[f[0]]); push(c[f[2]]); push(c[f[3]]);
-  }
-  return v;
-}
-}  // namespace
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
@@ -126,56 +104,34 @@ int main(int argc, char **argv) {
   glEnable(GL_PROGRAM_POINT_SIZE);
 
   // --- Photon scene setup ---------------------------------------------------
-  // No CLI arg: procedural three nested medium-shell cubes (containment debug
-  // scene) — regions vacuum | medium 1 | medium 2 | medium 3, lit from above.
-  // With a CLI arg: load that mesh file and make its tall box a single medium.
-  const bool useFile = argc > 1;
-
-  std::vector<tinybvh::bvhvec4> verts;
-  std::vector<uint32_t>         inst;
-  if (!useFile) {
-    const float halves[3] = {0.6f, 0.4f, 0.2f};
-    for (uint32_t i = 0; i < 3; ++i) {
-      const auto b = make_box(halves[i]);
-      verts.insert(verts.end(), b.begin(), b.end());
-      inst.insert(inst.end(), 12u, i);
-    }
+  if (argc < 2) {
+    std::cerr << "Usage: " << argv[0] << " <scene.obj>\n";
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    return -1;
   }
 
-  RayModel rayModel = useFile ? RayModel(std::string(argv[1]))
-                              : RayModel(std::move(verts), std::move(inst), 3u);
-  std::cout << "Scene: " << (useFile ? argv[1] : "3 nested medium cubes") << std::endl;
+  const std::string scenePath(argv[1]);
+  RayModel rayModel(scenePath);
+  std::cout << "Scene: " << scenePath << " (" << rayModel.instance_count() << " instances)\n";
 
   tinybvh::BVH bvh;
   bvh.Build(rayModel.triangles().data(), rayModel.triangle_count());
 
   Scene scene(rayModel);
-  PointLight light{tinybvh::bvhvec3{0.0f, 1.2f, 2.0f}, 0u};
-
-  if (useFile) {
-    light = SceneConfig::load(std::string(argv[1])).apply(scene);
-  } else {
-    // Procedural: three nested medium-shell cubes, regions vacuum|1|2|3.
-    scene.set_bsdf(1u, Bsdf{BsdfKind::MediumShell});
-    for (uint32_t i = 0; i < 3; ++i) scene.set_instance_bsdf(i, 1u);
-    scene.set_instance_medium(0u, /*in=*/1u, /*out=*/0u);
-    scene.set_instance_medium(1u, /*in=*/2u, /*out=*/1u);
-    scene.set_instance_medium(2u, /*in=*/3u, /*out=*/2u);
-    scene.set_medium(1u, Medium{/*sigma_s=*/4.0f, /*sigma_a=*/0.0f});
-    scene.set_medium(2u, Medium{/*sigma_s=*/4.0f, /*sigma_a=*/0.0f});
-    scene.set_medium(3u, Medium{/*sigma_s=*/4.0f, /*sigma_a=*/0.0f});
-  }
+  PointLight light = SceneConfig::load(scenePath).apply(scene);
 
   PhotonTracer tracer(scene, bvh, light);
   Rng rng(0xDECAFu);
   tracer.trace(/*photon_count=*/30000u, /*max_depth=*/64u, rng);
+  scene.upload_geometry();
   scene.upload_points(tracer.points());
   scene.upload_beams(tracer.beams());
   std::cout << "Traced " << tracer.points().size() << " points, " << tracer.beams().size()
             << " beams" << std::endl;
 
-  // One shader for both passes (position + color); gl_PointSize is ignored for lines.
   Shader vizShader("shaders/point.vs", "shaders/point.fs");
+  Shader geomShader("shaders/geom.vs", "shaders/geom.fs");
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
@@ -206,16 +162,27 @@ int main(int argc, char **argv) {
         glm::perspective(glm::radians(camera.Zoom), aspectRatio, 0.1f, 100.0f);
     const glm::mat4 view = camera.GetViewMatrix();
 
-    // --- Photon visualization pass(es), selected by the ImGui toggle.
-    const DebugUi::VizMode mode = debugUi->vizMode();
+    const ViewState& vs = debugUi->viewState();
+
+    // --- Geometry pass
+    if (vs.showGeometry) {
+      setCameraUniforms(geomShader, projection, view);
+      geomShader.setInt("aov_mode", static_cast<int>(vs.geomAov));
+      geomShader.setVec3("cameraPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      geomShader.setFloat("nearPlane", 0.1f);
+      geomShader.setFloat("farPlane", 100.0f);
+      scene.draw_geometry(geomShader, vs.instanceVisible);
+    }
+
+    // --- Photon visualization passes
     setCameraUniforms(vizShader, projection, view);
     vizShader.setFloat("pointSize", 3.0f);
-    if (mode == DebugUi::VizMode::Points || mode == DebugUi::VizMode::Both)
-      scene.draw_points(vizShader);
-    if (mode == DebugUi::VizMode::Beams || mode == DebugUi::VizMode::Both)
-      scene.draw_beams(vizShader);
+    if (vs.showPoints) scene.draw_points(vizShader);
+    if (vs.showBeams)  scene.draw_beams(vizShader);
 
-    if (debugUi->draw(camera, vsyncEnabled)) {
+    const uint32_t instance_count = rayModel.instance_count();
+    const uint32_t medium_count   = 8u;  // upper bound; filter vector resizes to fit
+    if (debugUi->draw(camera, vsyncEnabled, instance_count, medium_count)) {
       glfwSwapInterval(vsyncEnabled ? 1 : 0);
     }
     debugUi->endFrame();

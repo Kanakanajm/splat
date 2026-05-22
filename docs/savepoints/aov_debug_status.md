@@ -85,10 +85,20 @@ Both structs gain `uint32_t bounce_depth`, filled by the tracer at store time.
 
 | # | Task | Files |
 |---|---|---|
-| 1 | `ViewState` + multi-panel `DebugUi` scaffold | `include/debug_ui.hpp`, `src/debug_ui.cpp`, `src/main.cpp` |
-| 2 | Geometry pass: upload + wireframe + per-instance show/hide | `include/scene.hpp`, `src/scene_gl.cpp`, `shaders/geom.{vs,fs}` |
-| 3 | Geometry AOV modes: Normal, Depth, Backface | `shaders/geom.{vs,fs}`, `src/debug_ui.cpp` |
+| ~~1~~ | ~~`ViewState` + multi-panel `DebugUi` scaffold~~ ✅ | `include/debug_ui.hpp`, `src/debug_ui.cpp`, `src/main.cpp` |
+| ~~2~~ | ~~Geometry pass: upload + wireframe + per-instance show/hide~~ ✅ | `include/scene.hpp`, `src/scene_gl.cpp`, `shaders/geom.{vs,fs}` |
+| ~~3~~ | ~~Geometry AOV modes: Normal, Depth, Backface~~ ✅ | `shaders/geom.fs` |
 | 4 | Photon point AOVs + per-instance filter | `include/photon.hpp`, `src/photon_tracer.cpp`, `src/scene_gl.cpp`, `shaders/point.{vs,fs}` |
 | 5 | Photon beam AOVs + per-medium filter | `include/photon.hpp`, `src/photon_tracer.cpp`, `src/scene_gl.cpp`, `shaders/point.{vs,fs}` |
 
-## Status: Planned
+## Notes
+
+- `ViewState` filter vectors use `std::vector<bool>`, which returns proxies not real `bool&`.
+  ImGui `Checkbox` requires `bool*`, so all filter loops copy to a local `bool v`, then write back on change.
+- `medium_count` passed to `draw()` is a fixed upper bound (8); the filter vector resizes to fit actual usage.
+- Geometry VBO layout: `[x,y,z, nx,ny,nz]` per vertex; face normals computed from cross product at upload time.
+- Per-instance draw calls (one `glDrawArrays` per instance) allow skipping hidden instances without re-uploading.
+- `geom.fs` `aov_mode` must match `ViewState::GeomAov` enum ordinals exactly (bug-prone — keep in sync).
+- None and Diffuse both show flat instance palette color; Diffuse will diverge when a material system is added.
+
+## Status: On-going (3/5 tasks done)

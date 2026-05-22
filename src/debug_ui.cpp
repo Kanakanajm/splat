@@ -3,72 +3,170 @@
 #include "camera.hpp"
 
 #include <GLFW/glfw3.h>
+#include <cstdio>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
-DebugUi::DebugUi(GLFWwindow *window) {
-  IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
+// ---- lifecycle --------------------------------------------------------------
 
-  ImGuiIO &io = ImGui::GetIO();
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+DebugUi::DebugUi(GLFWwindow* window) {
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
 
-  ImGui::StyleColorsDark();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-  ImGui_ImplGlfw_InitForOpenGL(window, true);
-  ImGui_ImplOpenGL3_Init("#version 330");
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
 }
 
 DebugUi::~DebugUi() {
-  ImGui_ImplOpenGL3_Shutdown();
-  ImGui_ImplGlfw_Shutdown();
-  ImGui::DestroyContext();
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 }
 
 void DebugUi::beginFrame() {
-  ImGui_ImplOpenGL3_NewFrame();
-  ImGui_ImplGlfw_NewFrame();
-  ImGui::NewFrame();
-}
-
-bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled) {
-  if (showDemoWindow) {
-    ImGui::ShowDemoWindow(&showDemoWindow);
-  }
-
-  const ImGuiIO &io = ImGui::GetIO();
-
-  ImGui::Begin("Debug");
-  ImGui::Text("FPS: %.1f", io.Framerate);
-  const bool vsyncChanged = ImGui::Checkbox("VSync", &vsyncEnabled);
-  ImGui::Separator();
-  ImGui::Text("Camera position: %.2f, %.2f, %.2f", camera.Position.x,
-              camera.Position.y, camera.Position.z);
-  ImGui::Text("Camera pitch & yaw: %.2f, %.2f deg", camera.Pitch,  camera.Yaw);
-  ImGui::Text("Camera zoom: %.2f", camera.Zoom);
-  ImGui::Separator();
-  ImGui::Text("Photon visualization:");
-  int mode = static_cast<int>(vizMode_);
-  ImGui::RadioButton("Points", &mode, static_cast<int>(VizMode::Points));
-  ImGui::SameLine();
-  ImGui::RadioButton("Beams", &mode, static_cast<int>(VizMode::Beams));
-  ImGui::SameLine();
-  ImGui::RadioButton("Both", &mode, static_cast<int>(VizMode::Both));
-  vizMode_ = static_cast<VizMode>(mode);
-  ImGui::Checkbox("Show ImGui demo", &showDemoWindow);
-  ImGui::End();
-
-  return vsyncChanged;
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
 }
 
 void DebugUi::endFrame() {
-  ImGui::Render();
-  ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-bool DebugUi::wantsMouse() const { return ImGui::GetIO().WantCaptureMouse; }
+bool DebugUi::wantsMouse()    const { return ImGui::GetIO().WantCaptureMouse; }
+bool DebugUi::wantsKeyboard() const { return ImGui::GetIO().WantCaptureKeyboard; }
 
-bool DebugUi::wantsKeyboard() const {
-  return ImGui::GetIO().WantCaptureKeyboard;
+// ---- sub-panels -------------------------------------------------------------
+
+void DebugUi::drawGeometryPanel() {
+    if (!ImGui::CollapsingHeader("Geometry")) return;
+
+    ImGui::Checkbox("Show geometry", &state_.showGeometry);
+    if (!state_.showGeometry) return;
+
+    ImGui::Text("AOV:");
+    ImGui::SameLine();
+    int g = static_cast<int>(state_.geomAov);
+    ImGui::RadioButton("None",     &g, static_cast<int>(ViewState::GeomAov::None));    ImGui::SameLine();
+    ImGui::RadioButton("Diffuse",  &g, static_cast<int>(ViewState::GeomAov::Diffuse)); ImGui::SameLine();
+    ImGui::RadioButton("Normal",   &g, static_cast<int>(ViewState::GeomAov::Normal));  ImGui::SameLine();
+    ImGui::RadioButton("Depth",    &g, static_cast<int>(ViewState::GeomAov::Depth));   ImGui::SameLine();
+    ImGui::RadioButton("Backface", &g, static_cast<int>(ViewState::GeomAov::Backface));
+    state_.geomAov = static_cast<ViewState::GeomAov>(g);
+
+    if (!state_.instanceVisible.empty()) {
+        ImGui::Text("Instances:");
+        for (int i = 0; i < static_cast<int>(state_.instanceVisible.size()); ++i) {
+            char label[32];
+            snprintf(label, sizeof(label), "##inst%d", i);
+            bool v = state_.instanceVisible[i];
+            if (ImGui::Checkbox(label, &v)) state_.instanceVisible[i] = v;
+            ImGui::SameLine();
+            ImGui::Text("%d", i);
+            if ((i + 1) % 4 != 0) ImGui::SameLine();
+        }
+        ImGui::NewLine();
+    }
+}
+
+void DebugUi::drawPhotonPointPanel() {
+    if (!ImGui::CollapsingHeader("Photon Points")) return;
+
+    ImGui::Checkbox("Show points", &state_.showPoints);
+    if (!state_.showPoints) return;
+
+    ImGui::Text("AOV:");
+    ImGui::SameLine();
+    int p = static_cast<int>(state_.pointAov);
+    ImGui::RadioButton("InstanceId",  &p, static_cast<int>(ViewState::PointAov::InstanceId));  ImGui::SameLine();
+    ImGui::RadioButton("BsdfKind",    &p, static_cast<int>(ViewState::PointAov::BsdfKind));    ImGui::SameLine();
+    ImGui::RadioButton("BounceDepth", &p, static_cast<int>(ViewState::PointAov::BounceDepth));
+    state_.pointAov = static_cast<ViewState::PointAov>(p);
+
+    if (!state_.instancePointsVisible.empty()) {
+        ImGui::Text("Filter by instance:");
+        for (int i = 0; i < static_cast<int>(state_.instancePointsVisible.size()); ++i) {
+            char label[32];
+            snprintf(label, sizeof(label), "##ptinst%d", i);
+            bool v = state_.instancePointsVisible[i];
+            if (ImGui::Checkbox(label, &v)) state_.instancePointsVisible[i] = v;
+            ImGui::SameLine();
+            ImGui::Text("%d", i);
+            if ((i + 1) % 4 != 0) ImGui::SameLine();
+        }
+        ImGui::NewLine();
+    }
+}
+
+void DebugUi::drawPhotonBeamPanel() {
+    if (!ImGui::CollapsingHeader("Photon Beams")) return;
+
+    ImGui::Checkbox("Show beams", &state_.showBeams);
+    if (!state_.showBeams) return;
+
+    ImGui::Text("AOV:");
+    ImGui::SameLine();
+    int b = static_cast<int>(state_.beamAov);
+    ImGui::RadioButton("MediumId",    &b, static_cast<int>(ViewState::BeamAov::MediumId));    ImGui::SameLine();
+    ImGui::RadioButton("T",           &b, static_cast<int>(ViewState::BeamAov::T));           ImGui::SameLine();
+    ImGui::RadioButton("BounceDepth", &b, static_cast<int>(ViewState::BeamAov::BounceDepth)); ImGui::SameLine();
+    ImGui::RadioButton("Length",      &b, static_cast<int>(ViewState::BeamAov::Length));
+    state_.beamAov = static_cast<ViewState::BeamAov>(b);
+
+    if (!state_.mediumBeamsVisible.empty()) {
+        ImGui::Text("Filter by medium:");
+        for (int i = 0; i < static_cast<int>(state_.mediumBeamsVisible.size()); ++i) {
+            char label[32];
+            snprintf(label, sizeof(label), "##med%d", i);
+            bool v = state_.mediumBeamsVisible[i];
+            if (ImGui::Checkbox(label, &v)) state_.mediumBeamsVisible[i] = v;
+            ImGui::SameLine();
+            ImGui::Text("%d", i);
+            if ((i + 1) % 4 != 0) ImGui::SameLine();
+        }
+        ImGui::NewLine();
+    }
+}
+
+// ---- main draw --------------------------------------------------------------
+
+bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
+                   uint32_t instance_count, uint32_t medium_count) {
+    if (showDemoWindow_) ImGui::ShowDemoWindow(&showDemoWindow_);
+
+    // Resize filter vectors to match scene counts (fill new slots as visible).
+    state_.instanceVisible.resize(instance_count, true);
+    state_.instancePointsVisible.resize(instance_count, true);
+    state_.mediumBeamsVisible.resize(medium_count, true);
+
+    const ImGuiIO& io = ImGui::GetIO();
+
+    ImGui::Begin("Debug");
+
+    // Info
+    ImGui::Text("FPS: %.1f", io.Framerate);
+    const bool vsyncChanged = ImGui::Checkbox("VSync", &vsyncEnabled);
+    ImGui::Separator();
+    ImGui::Text("Camera: (%.2f, %.2f, %.2f)  pitch %.1f  yaw %.1f",
+                camera.Position.x, camera.Position.y, camera.Position.z,
+                camera.Pitch, camera.Yaw);
+    ImGui::Separator();
+
+    drawGeometryPanel();
+    drawPhotonPointPanel();
+    drawPhotonBeamPanel();
+
+    ImGui::Separator();
+    ImGui::Checkbox("ImGui demo", &showDemoWindow_);
+
+    ImGui::End();
+
+    return vsyncChanged;
 }

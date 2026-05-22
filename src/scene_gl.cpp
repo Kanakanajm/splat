@@ -8,6 +8,7 @@
 #include <glad/glad.h>
 
 #include <array>
+#include <cmath>
 #include <vector>
 
 namespace {
@@ -46,7 +47,100 @@ void upload_interleaved(unsigned int& vao, unsigned int& vbo, const std::vector<
     glBindVertexArray(0);
 }
 
+tinybvh::bvhvec3 cross3(const tinybvh::bvhvec3& a, const tinybvh::bvhvec3& b) {
+    return { a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x };
+}
+
+tinybvh::bvhvec3 normalize3(const tinybvh::bvhvec3& v) {
+    const float len = std::sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+    if (len < 1e-8f) return {0.f, 1.f, 0.f};
+    return {v.x/len, v.y/len, v.z/len};
+}
+
 }  // namespace
+
+// ---- Geometry ---------------------------------------------------------------
+
+void Scene::upload_geometry() {
+    const auto& tris = model_.triangles();
+    const uint32_t tri_count = model_.triangle_count();
+    const uint32_t n_inst    = model_.instance_count();
+
+    // Count triangles per instance for range allocation.
+    std::vector<uint32_t> tri_per_inst(n_inst, 0u);
+    for (uint32_t t = 0; t < tri_count; ++t)
+        ++tri_per_inst[model_.instance_id(t)];
+
+    // Build instance ranges (start vertex index, vertex count).
+    geom_ranges_.resize(n_inst);
+    uint32_t cursor = 0;
+    for (uint32_t i = 0; i < n_inst; ++i) {
+        geom_ranges_[i] = { cursor, tri_per_inst[i] * 3u };
+        cursor += geom_ranges_[i].count;
+    }
+
+    // Build per-instance vertex lists in order so ranges are contiguous.
+    // Each triangle contributes 3 vertices; layout: [x,y,z, nx,ny,nz].
+    std::vector<std::vector<float>> inst_data(n_inst);
+    for (uint32_t i = 0; i < n_inst; ++i)
+        inst_data[i].reserve(tri_per_inst[i] * 18u);  // 3 verts * 6 floats
+
+    for (uint32_t t = 0; t < tri_count; ++t) {
+        const tinybvh::bvhvec3 v0 = {tris[3*t+0].x, tris[3*t+0].y, tris[3*t+0].z};
+        const tinybvh::bvhvec3 v1 = {tris[3*t+1].x, tris[3*t+1].y, tris[3*t+1].z};
+        const tinybvh::bvhvec3 v2 = {tris[3*t+2].x, tris[3*t+2].y, tris[3*t+2].z};
+        const tinybvh::bvhvec3 e0 = {v1.x-v0.x, v1.y-v0.y, v1.z-v0.z};
+        const tinybvh::bvhvec3 e1 = {v2.x-v0.x, v2.y-v0.y, v2.z-v0.z};
+        const tinybvh::bvhvec3 n  = normalize3(cross3(e0, e1));
+
+        const uint32_t iid = model_.instance_id(t);
+        auto& d = inst_data[iid];
+        for (const auto& v : {v0, v1, v2}) {
+            d.push_back(v.x); d.push_back(v.y); d.push_back(v.z);
+            d.push_back(n.x); d.push_back(n.y); d.push_back(n.z);
+        }
+    }
+
+    // Flatten instance data in range order into one buffer.
+    std::vector<float> flat;
+    flat.reserve(tri_count * 18u);
+    for (uint32_t i = 0; i < n_inst; ++i)
+        flat.insert(flat.end(), inst_data[i].begin(), inst_data[i].end());
+
+    if (geom_vao_ == 0) glGenVertexArrays(1, &geom_vao_);
+    if (geom_vbo_ == 0) glGenBuffers(1, &geom_vbo_);
+    glBindVertexArray(geom_vao_);
+    glBindBuffer(GL_ARRAY_BUFFER, geom_vbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(flat.size() * sizeof(float)),
+                 flat.data(), GL_STATIC_DRAW);
+    constexpr GLsizei stride = 6 * sizeof(float);
+    glEnableVertexAttribArray(0);  // aPos
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glEnableVertexAttribArray(1);  // aNormal
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
+    glBindVertexArray(0);
+}
+
+void Scene::draw_geometry(Shader& shader, const std::vector<bool>& instance_visible) const {
+    if (geom_vao_ == 0 || geom_ranges_.empty()) return;
+
+    shader.use();
+    glBindVertexArray(geom_vao_);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+    for (uint32_t i = 0; i < static_cast<uint32_t>(geom_ranges_.size()); ++i) {
+        if (!instance_visible.empty() && i < instance_visible.size() && !instance_visible[i])
+            continue;
+        shader.setInt("instanceId", static_cast<int>(i));
+        const auto& r = geom_ranges_[i];
+        glDrawArrays(GL_TRIANGLES, static_cast<GLint>(r.start), static_cast<GLsizei>(r.count));
+    }
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glBindVertexArray(0);
+}
+
+// ---- Photon Points ----------------------------------------------------------
 
 void Scene::upload_points(const std::vector<PhotonPoint>& points) {
     // Interleaved [x, y, z, r, g, b] per point; color by instance id.
@@ -72,31 +166,22 @@ void Scene::draw_points(Shader& shader) const {
     glBindVertexArray(0);
 }
 
+// ---- Photon Beams -----------------------------------------------------------
+
 void Scene::upload_beams(const std::vector<PhotonBeam>& beams) {
     // Two vertices (start, end) per beam; color both by medium id.
     std::vector<float> data;
     data.reserve(beams.size() * 12);
     auto push = [&](const tinybvh::bvhvec3& p, const std::array<float, 3>& c) {
-        data.push_back(p.x);
-        data.push_back(p.y);
-        data.push_back(p.z);
-        data.push_back(c[0]);
-        data.push_back(c[1]);
-        data.push_back(c[2]);
+        data.push_back(p.x); data.push_back(p.y); data.push_back(p.z);
+        data.push_back(c[0]); data.push_back(c[1]); data.push_back(c[2]);
     };
-    unsigned int count = 0;
     for (const auto& b : beams) {
-        if (b.medium_id == 2) 
-        {
-            count++;
-const auto c = medium_color(b.medium_id);
-            push(b.start, c);
-            push(b.end, c);
-        }
-                   
-
+        const auto c = medium_color(b.medium_id);
+        push(b.start, c);
+        push(b.end, c);
     }
-    beam_vertex_count_ = static_cast<uint32_t>(count * 2);
+    beam_vertex_count_ = static_cast<uint32_t>(beams.size() * 2);
     upload_interleaved(beams_vao_, beams_vbo_, data);
 }
 
