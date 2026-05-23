@@ -168,6 +168,94 @@ TEST_CASE("Bsdf: medium shell passes the ray straight through", "[bsdf]") {
     REQUIRE(bs.is_refract == true);
 }
 
+// ---------------------------------------------------------------------------
+// Dielectric tests
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Bsdf: dielectric TIR always reflects past critical angle", "[bsdf][dielectric]") {
+    // Glass ior=1.5 from inside → exiting, eta = 1/1.5 ≈ 0.667.
+    // Critical angle: sin_c = 0.667 → theta_c ≈ 41.8°.
+    // Use 60° incidence (cos = 0.5) — past critical, so F = 1 on every sample.
+    Rng rng{42};
+    const Bsdf glass{BsdfKind::Dielectric, 1.5f};
+    // normal = {0,0,1}, photon exits (ndi_raw > 0): incoming has positive z-component.
+    const bvhvec3 normal{0.0f, 0.0f, 1.0f};
+    const float   cos60 = 0.5f, sin60 = std::sqrt(0.75f);
+    const bvhvec3 incoming{sin60, 0.0f, cos60};  // ndi_raw = cos60 > 0 → exiting
+
+    for (int i = 0; i < 200; ++i) {
+        const auto bs = glass.sample(rng, incoming, normal);
+        REQUIRE(bs.is_refract == false);  // TIR: always reflect
+    }
+}
+
+TEST_CASE("Bsdf: dielectric reflect fraction matches Fresnel at normal incidence", "[bsdf][dielectric]") {
+    // eta = 1.5 entering, normal incidence: F = ((eta-1)/(eta+1))^2 = (0.5/2.5)^2 = 0.04
+    constexpr float kExpectedF = 0.04f;
+    constexpr int   N          = 100000;
+    Rng rng{123};
+    const Bsdf glass{BsdfKind::Dielectric, 1.5f};
+    const bvhvec3 normal{0.0f, 0.0f, 1.0f};
+    const bvhvec3 incoming{0.0f, 0.0f, -1.0f};  // normal incidence, entering
+
+    int reflects = 0;
+    for (int i = 0; i < N; ++i) {
+        if (!glass.sample(rng, incoming, normal).is_refract) ++reflects;
+    }
+    const float measured = static_cast<float>(reflects) / N;
+    INFO("measured reflect fraction = " << measured << ", expected ≈ " << kExpectedF);
+    REQUIRE(std::fabs(measured - kExpectedF) < 0.005f);
+}
+
+TEST_CASE("Bsdf: dielectric refracted direction satisfies Snell's law", "[bsdf][dielectric]") {
+    // eta = 1.5 entering, 30° incidence: sin_theta_i = 0.5, sin_theta_t = 0.5/1.5 = 1/3.
+    Rng rng{7};
+    const Bsdf    glass{BsdfKind::Dielectric, 1.5f};
+    const bvhvec3 normal{0.0f, 0.0f, 1.0f};
+    // incoming at 30° from -z: {sin30, 0, -cos30}
+    const float   sin30 = 0.5f, cos30 = std::sqrt(0.75f);
+    const bvhvec3 incoming = normalize({sin30, 0.0f, -cos30});
+
+    constexpr float kExpectedSinT = 1.0f / 3.0f;
+    int refract_count = 0;
+    for (int i = 0; i < 10000; ++i) {
+        const auto bs = glass.sample(rng, incoming, normal);
+        if (!bs.is_refract) continue;
+        ++refract_count;
+        // Refracted ray goes through surface (negative z). sin_theta_t = |xy component|.
+        const float sin_theta_t = std::sqrt(bs.dir.x*bs.dir.x + bs.dir.y*bs.dir.y);
+        REQUIRE(sin_theta_t == Catch::Approx(kExpectedSinT).margin(1e-4f));
+        REQUIRE(bs.dir.z < 0.0f);  // transmitted through surface
+    }
+    REQUIRE(refract_count > 9000);  // F ≈ 4% at 30°, so ~96% refract
+}
+
+TEST_CASE("Bsdf: dielectric branch weights are correct", "[bsdf][dielectric]") {
+    // Run many samples; check weight for each branch independently via is_refract.
+    const bvhvec3 refl_color{0.9f, 0.8f, 0.7f};
+    const bvhvec3 trans_color{0.6f, 0.5f, 0.4f};
+    const float   eta = 1.5f;
+    Bsdf glass{BsdfKind::Dielectric, eta, refl_color, trans_color};
+    const bvhvec3 normal{0.0f, 0.0f, 1.0f};
+    const bvhvec3 incoming{0.0f, 0.0f, -1.0f};  // normal incidence, entering
+    Rng rng{99};
+
+    const float expected_refract_w = 1.0f / (eta * eta);  // trans_color / eta^2, per channel
+
+    for (int i = 0; i < 2000; ++i) {
+        const auto bs = glass.sample(rng, incoming, normal);
+        if (!bs.is_refract) {
+            REQUIRE(bs.weight.x == Catch::Approx(refl_color.x));
+            REQUIRE(bs.weight.y == Catch::Approx(refl_color.y));
+            REQUIRE(bs.weight.z == Catch::Approx(refl_color.z));
+        } else {
+            REQUIRE(bs.weight.x == Catch::Approx(trans_color.x * expected_refract_w).margin(1e-5f));
+            REQUIRE(bs.weight.y == Catch::Approx(trans_color.y * expected_refract_w).margin(1e-5f));
+            REQUIRE(bs.weight.z == Catch::Approx(trans_color.z * expected_refract_w).margin(1e-5f));
+        }
+    }
+}
+
 TEST_CASE("Scene: bsdf table defaults id 0 to diffuse and stores entries", "[bsdf][scene]") {
     // Minimal single-triangle synthetic model: one instance.
     std::vector<tinybvh::bvhvec4> tris = {
