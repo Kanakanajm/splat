@@ -7,7 +7,8 @@
 
 struct PointLight {
     tinybvh::bvhvec3 position;
-    uint32_t         medium_id;  // index into the tracer's medium table (0 = vacuum convention)
+    tinybvh::bvhvec3 power     = {1.0f, 1.0f, 1.0f};  // total RGB flux
+    uint32_t         medium_id = 0u;
 
     // Sample a primary ray: origin = position, direction uniformly on the unit sphere.
     tinybvh::Ray emit_ray(Rng& rng) const;

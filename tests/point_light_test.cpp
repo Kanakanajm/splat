@@ -14,7 +14,7 @@ constexpr const char* kSuzannePath = TEST_ASSETS_DIR "/meshes/Suzanne.ply";
 }
 
 TEST_CASE("PointLight: emitted rays originate at light position", "[point_light]") {
-    PointLight light{tinybvh::bvhvec3{1.0f, 2.0f, 3.0f}, /*medium_id=*/0u};
+    PointLight light{tinybvh::bvhvec3{1.0f, 2.0f, 3.0f}};
     Rng rng{99};
     for (int i = 0; i < 1000; ++i) {
         const tinybvh::Ray ray = light.emit_ray(rng);
@@ -25,7 +25,7 @@ TEST_CASE("PointLight: emitted rays originate at light position", "[point_light]
 }
 
 TEST_CASE("PointLight: emitted directions are unit length", "[point_light]") {
-    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, 0u};
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}};
     Rng rng{2024};
     for (int i = 0; i < 1000; ++i) {
         const tinybvh::Ray ray = light.emit_ray(rng);
@@ -44,7 +44,7 @@ TEST_CASE("PointLight + BVH: photons cast from outside Suzanne hit the mesh",
 
     // Suzanne is roughly centered at the origin with extent ~1; place the light
     // close enough that a meaningful solid angle is covered.
-    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 3.0f}, 0u};
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 3.0f}};
     Rng rng{2025};
 
     constexpr int kRays = 10000;

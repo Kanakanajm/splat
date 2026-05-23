@@ -56,7 +56,7 @@ TEST_CASE("PhotonTracer: photons land on Suzanne and project into a debug PPM",
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
-    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 3.0f}, /*medium_id=*/0u};
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 3.0f}};
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{0xDECAFu};
 
@@ -118,7 +118,7 @@ TEST_CASE("PhotonTracer: photons bounce inside a closed box — point count scal
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};  // default bsdf id 0 == Diffuse
-    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, /*medium_id=*/0u};
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}};
 
     constexpr uint32_t kN = 20000;
 
@@ -159,7 +159,7 @@ TEST_CASE("PhotonTracer: only diffuse surfaces store photon points", "[photon_tr
     scene.set_instance_bsdf(0, 1u);
     scene.set_bsdf(1u, Bsdf{BsdfKind::Conductor, 1.0f});
 
-    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, /*medium_id=*/0u};
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}};
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{2u};
     tracer.trace(/*photon_count=*/5000, /*max_depth=*/4, rng);
@@ -179,7 +179,7 @@ TEST_CASE("PhotonTracer: photons inside a participating medium emit beams",
     scene.set_medium(1u, Medium{/*sigma_s=*/3.0f, /*sigma_a=*/0.0f});
 
     // Light sits inside medium 1, so the photon starts in a participating medium.
-    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, /*medium_id=*/1u};
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, /*medium_id=*/1u};
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{4u};
     tracer.trace(/*photon_count=*/20000, /*max_depth=*/4, rng);
@@ -213,7 +213,7 @@ TEST_CASE("PhotonTracer: beams stay inside a single medium cube in vacuum",
     scene.set_medium(1u, Medium{/*sigma_s=*/5.0f, /*sigma_a=*/0.0f});
 
     // Light directly above the cube, in vacuum (medium 0).
-    PointLight light{tinybvh::bvhvec3{0.0f, 1.0f, 0.0f}, /*medium_id=*/0u};
+    PointLight light{tinybvh::bvhvec3{0.0f, 1.0f, 0.0f}};
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{123u};
     tracer.trace(/*photon_count=*/50000, /*max_depth=*/32, rng);
@@ -266,7 +266,7 @@ TEST_CASE("PhotonTracer: beams stay contained across three nested medium cubes",
     scene.set_medium(2u, Medium{/*sigma_s=*/4.0f, /*sigma_a=*/0.0f});
     scene.set_medium(3u, Medium{/*sigma_s=*/4.0f, /*sigma_a=*/0.0f});
 
-    PointLight light{tinybvh::bvhvec3{0.0f, 1.2f, 0.0f}, /*medium_id=*/0u};
+    PointLight light{tinybvh::bvhvec3{0.0f, 1.2f, 0.0f}};
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{321u};
     tracer.trace(/*photon_count=*/100000, /*max_depth=*/64, rng);
@@ -322,7 +322,7 @@ TEST_CASE("PhotonTracer: passing through a medium-shell switches the current med
     scene.set_instance_medium(0u, /*in=*/1u, /*out=*/0u);
     scene.set_medium(1u, Medium{/*sigma_s=*/2.0f, /*sigma_a=*/0.0f});
 
-    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 1.0f}, /*medium_id=*/0u};
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 1.0f}};
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{9u};
     tracer.trace(/*photon_count=*/20000, /*max_depth=*/4, rng);

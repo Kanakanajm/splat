@@ -20,7 +20,11 @@ public:
     PointLight apply(Scene& scene) const;
 
 private:
-    struct BsdfCfg    { BsdfKind kind; };
+    struct BsdfCfg {
+        BsdfKind         kind;
+        tinybvh::bvhvec3 color               = {0.8f, 0.8f, 0.8f};
+        tinybvh::bvhvec3 transmittance_color = {1.0f, 1.0f, 1.0f};
+    };
     struct MediumCfg  { float sigma_s; float sigma_a; };
     struct InstanceCfg {
         std::string bsdf;       // empty = default diffuse
@@ -28,9 +32,10 @@ private:
         std::string medium_out; // empty = vacuum
     };
 
-    std::unordered_map<std::string, BsdfCfg>    bsdfs_;
-    std::unordered_map<std::string, MediumCfg>  mediums_;
-    std::unordered_map<std::string, InstanceCfg> instances_;
+    std::unordered_map<std::string, BsdfCfg>     bsdfs_;
+    std::unordered_map<std::string, MediumCfg>   mediums_;
+    std::unordered_map<std::string, InstanceCfg>  instances_;
     tinybvh::bvhvec3 light_pos_{};
+    tinybvh::bvhvec3 light_power_ = {1.0f, 1.0f, 1.0f};
     std::string      light_medium_;  // empty = vacuum
 };

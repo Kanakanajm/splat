@@ -15,8 +15,14 @@ using json = nlohmann::json;
 
 static BsdfKind parse_bsdf_kind(const std::string& s) {
     if (s == "Diffuse")     return BsdfKind::Diffuse;
+    if (s == "Conductor")   return BsdfKind::Conductor;
+    if (s == "Dielectric")  return BsdfKind::Dielectric;
     if (s == "MediumShell") return BsdfKind::MediumShell;
     throw std::runtime_error("SceneConfig: unknown bsdf kind '" + s + "'");
+}
+
+static tinybvh::bvhvec3 parse_vec3(const json& arr) {
+    return {arr[0].get<float>(), arr[1].get<float>(), arr[2].get<float>()};
 }
 
 // ---- SceneConfig::load ------------------------------------------------------
@@ -52,7 +58,10 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
     // --- bsdfs ---------------------------------------------------------------
     if (doc.contains("bsdfs")) {
         for (auto& [name, val] : doc["bsdfs"].items()) {
-            cfg.bsdfs_[name] = BsdfCfg{ parse_bsdf_kind(val.at("kind").get<std::string>()) };
+            BsdfCfg bc{parse_bsdf_kind(val.at("kind").get<std::string>())};
+            if (val.contains("color"))               bc.color               = parse_vec3(val["color"]);
+            if (val.contains("transmittance_color")) bc.transmittance_color = parse_vec3(val["transmittance_color"]);
+            cfg.bsdfs_[name] = bc;
         }
     }
 
@@ -86,8 +95,8 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
         throw std::runtime_error("SceneConfig: missing required 'light' block");
 
     const auto& l = doc["light"];
-    const auto& p = l.at("position");
-    cfg.light_pos_ = { p[0].get<float>(), p[1].get<float>(), p[2].get<float>() };
+    cfg.light_pos_   = parse_vec3(l.at("position"));
+    if (l.contains("power")) cfg.light_power_ = parse_vec3(l["power"]);
 
     if (l.contains("medium")) {
         cfg.light_medium_ = l["medium"].get<std::string>();
@@ -108,7 +117,7 @@ PointLight SceneConfig::apply(Scene& scene) const {
     uint32_t next_bsdf = 1u;
     for (auto& [name, cfg] : bsdfs_) {
         bsdf_ids[name] = next_bsdf;
-        scene.set_bsdf(next_bsdf, Bsdf{cfg.kind});
+        scene.set_bsdf(next_bsdf, Bsdf{cfg.kind, 1.0f, cfg.color, cfg.transmittance_color});
         ++next_bsdf;
     }
 
@@ -139,5 +148,5 @@ PointLight SceneConfig::apply(Scene& scene) const {
     }
 
     const uint32_t light_mid = resolve_medium(light_medium_);
-    return PointLight{ light_pos_, light_mid };
+    return PointLight{ light_pos_, light_power_, light_mid };
 }
