@@ -106,6 +106,54 @@ TEST_CASE("Bsdf: diffuse handles a back-facing geometric normal", "[bsdf]") {
     }
 }
 
+TEST_CASE("Bsdf: conductor reflects to perfect mirror direction", "[bsdf]") {
+    Rng rng{0};
+    const bvhvec3 reflectance{0.9f, 0.6f, 0.3f};
+    const Bsdf conductor{BsdfKind::Conductor, 1.0f, reflectance};
+    const bvhvec3 normal{0.0f, 0.0f, 1.0f};
+
+    // 45-degree incidence: incoming = normalize(1, 0, -1), expected mirror = normalize(1, 0, 1).
+    const float inv_sqrt2 = 1.0f / std::sqrt(2.0f);
+    const bvhvec3 incoming{inv_sqrt2, 0.0f, -inv_sqrt2};
+    const auto bs = conductor.sample(rng, incoming, normal);
+
+    REQUIRE(bs.dir.x == Catch::Approx(inv_sqrt2).margin(1e-5f));
+    REQUIRE(bs.dir.y == Catch::Approx(0.0f).margin(1e-5f));
+    REQUIRE(bs.dir.z == Catch::Approx(inv_sqrt2).margin(1e-5f));
+    REQUIRE(dot(bs.dir, bs.dir) == Catch::Approx(1.0f).margin(1e-5f));
+    REQUIRE(bs.is_refract == false);
+}
+
+TEST_CASE("Bsdf: conductor weight equals bsdf.color", "[bsdf]") {
+    Rng rng{0};
+    const bvhvec3 reflectance{0.7f, 0.5f, 0.2f};
+    const Bsdf conductor{BsdfKind::Conductor, 1.0f, reflectance};
+    const bvhvec3 normal{0.0f, 1.0f, 0.0f};
+    const bvhvec3 incoming = normalize({0.3f, -1.0f, 0.1f});
+
+    const auto bs = conductor.sample(rng, incoming, normal);
+    REQUIRE(bs.weight.x == Catch::Approx(reflectance.x));
+    REQUIRE(bs.weight.y == Catch::Approx(reflectance.y));
+    REQUIRE(bs.weight.z == Catch::Approx(reflectance.z));
+    // Reflected ray must be on the side the photon came from (opposite to incoming z-component).
+    REQUIRE(dot(bs.dir, normal) >= 0.0f);
+}
+
+TEST_CASE("Bsdf: conductor handles back-facing geometric normal", "[bsdf]") {
+    Rng rng{0};
+    const Bsdf conductor{BsdfKind::Conductor, 1.0f, {1.0f, 1.0f, 1.0f}};
+    // Normal points same way as photon — must be flipped before reflecting.
+    const bvhvec3 normal{0.0f, 0.0f, -1.0f};
+    const float inv_sqrt2 = 1.0f / std::sqrt(2.0f);
+    const bvhvec3 incoming{inv_sqrt2, 0.0f, -inv_sqrt2};
+
+    const auto bs = conductor.sample(rng, incoming, normal);
+    // After flipping, the mirror is still normalize(1, 0, 1).
+    REQUIRE(bs.dir.x == Catch::Approx(inv_sqrt2).margin(1e-5f));
+    REQUIRE(bs.dir.y == Catch::Approx(0.0f).margin(1e-5f));
+    REQUIRE(bs.dir.z == Catch::Approx(inv_sqrt2).margin(1e-5f));
+}
+
 TEST_CASE("Bsdf: medium shell passes the ray straight through", "[bsdf]") {
     Rng rng{77};
     const Bsdf shell{BsdfKind::MediumShell, 1.0f};

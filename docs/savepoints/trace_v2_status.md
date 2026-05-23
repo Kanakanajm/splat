@@ -129,11 +129,11 @@ estimator. Alternative — Option B (beam.cpp): `weight *= exp(−σ_t · t_hit)
 | # | Task | Files |
 |---|---|---|
 | ~~1~~ | ~~`BsdfSample` return struct + update `Bsdf::sample` signature~~ ✅ | `include/bsdf.hpp`, `src/bsdf.cpp`, `src/photon_tracer.cpp` |
-| 2 | Conductor BSDF — mirror direction, `weight = bsdf.color` | `src/bsdf.cpp` |
+| ~~2~~ | ~~Conductor BSDF — mirror direction, `weight = bsdf.color`~~ ✅ | `src/bsdf.cpp` |
 | 3 | `fresnelDielectric` + Dielectric BSDF | `include/bsdf.hpp`, `src/bsdf.cpp` |
 | 4 | `PointLight::power` + JSON wiring | `include/point_light.hpp`, scene JSON config |
 | 5 | Power fields on `PhotonBeam` / `PhotonPoint` | `include/photon.hpp` |
 | 6 | Weight tracking in `PhotonTracer` — init, RR, scatter albedo, Dielectric medium switch | `src/photon_tracer.cpp` |
 | 7 | Power AOVs — 5 new view modes | `src/scene_gl.cpp`, `src/debug_ui.cpp`, `shaders/point.{vs,fs}`, `shaders/beam.{vs,fs}` |
 
-## Status: In Progress (1/7 tasks done)
+## Status: In Progress (2/7 tasks done)
