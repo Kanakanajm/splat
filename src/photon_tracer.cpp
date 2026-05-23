@@ -4,6 +4,8 @@
 #include "medium.hpp"
 #include "sampling.hpp"
 
+#include <algorithm>
+
 namespace {
 
 // Geometric (face) normal of a triangle from the model's flat fat-triangle buffer.
@@ -16,6 +18,10 @@ tinybvh::bvhvec3 face_normal(const RayModel& model, uint32_t prim) {
     return tinybvh::tinybvh_normalize(tinybvh::tinybvh_cross(v1 - v0, v2 - v0));
 }
 
+float max_component(const tinybvh::bvhvec3& v) {
+    return std::max({v.x, v.y, v.z});
+}
+
 }  // namespace
 
 void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
@@ -25,14 +31,20 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
 
     constexpr float kEps = 1e-4f;  // ray-origin offset to escape the interaction point
 
+    const float n = static_cast<float>(photon_count);
+    const tinybvh::bvhvec3 init_weight{light_.power.x / n,
+                                       light_.power.y / n,
+                                       light_.power.z / n};
+
     for (uint32_t i = 0; i < photon_count; ++i) {
-        tinybvh::Ray ray = light_.emit_ray(rng);
-        uint32_t     m   = light_.medium_id;  // current medium (initially the light's)
+        tinybvh::Ray     ray    = light_.emit_ray(rng);
+        uint32_t         m      = light_.medium_id;
+        tinybvh::bvhvec3 weight = init_weight;
 
         for (uint32_t depth = 0; depth < max_depth; ++depth) {
             bvh_.Intersect(ray);
             const bool  hit   = ray.hit.t < BVH_FAR;
-            const float t_hit = ray.hit.t;  // BVH_FAR when there is no surface
+            const float t_hit = ray.hit.t;
 
             // Free-flight: only participating media (sigma_t > 0) scatter; vacuum never does.
             const float sigma_t = scene_.medium(m).sigma_t();
@@ -42,31 +54,30 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
 
             if (t_media < t_hit) {
                 // A participating medium with no surface ahead means the photon has
-                // escaped into open space (V1 media are bounded by geometry; this also
-                // guards against medium desync at coincident surfaces). Terminate.
+                // escaped into open space. Terminate.
                 if (!hit) break;
 
-                // (a) Medium scatter event at t_media. Record a "long beam" from the
-                // ray origin to the medium exit (the surface at t_hit), then respawn
-                // isotropically from the scatter point.
-                const tinybvh::bvhvec3 p{ray.O.x + t_media * ray.D.x,
-                                         ray.O.y + t_media * ray.D.y,
-                                         ray.O.z + t_media * ray.D.z};
+                // Medium scatter at t_media. Beam segment = [ray.O, scatter point].
+                const tinybvh::bvhvec3 scatter{ray.O.x + t_media * ray.D.x,
+                                               ray.O.y + t_media * ray.D.y,
+                                               ray.O.z + t_media * ray.D.z};
 
-                beams_.push_back({p,
-                                  {ray.O.x + t_hit * ray.D.x,
-                                   ray.O.y + t_hit * ray.D.y,
-                                   ray.O.z + t_hit * ray.D.z},
-                                  m, depth});
+                beams_.push_back({ray.O, scatter, m, depth, weight});
 
-                
-                const tinybvh::bvhvec3 dir = sample_unit_sphere(rng);
-                ray = tinybvh::Ray{p,
-                                   dir};
+                // Russian roulette.
+                const float prr = std::max(0.05f, std::min(0.95f, max_component(weight)));
+                if (rng.uniform() >= prr) break;
+                weight.x /= prr; weight.y /= prr; weight.z /= prr;
+
+                // Single-scatter albedo: σ_s / σ_t.
+                const float albedo = scene_.medium(m).sigma_s / sigma_t;
+                weight.x *= albedo; weight.y *= albedo; weight.z *= albedo;
+
+                ray = tinybvh::Ray{scatter, sample_unit_sphere(rng)};
                 continue;
             }
 
-            // (b) Surface hit.
+            // Surface hit.
             if (!hit) break;
 
             const uint32_t prim = ray.hit.prim;
@@ -77,17 +88,20 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
             const uint32_t bsdf_id = scene_.bsdf_id_at(prim);
             const Bsdf&    bsdf    = scene_.bsdf(bsdf_id);
             if (bsdf.kind == BsdfKind::Diffuse) {
-                points_.push_back({p, bsdf_id, scene_.model().instance_id(prim), depth});
+                points_.push_back({p, bsdf_id, scene_.model().instance_id(prim), depth, weight});
             }
 
-            const tinybvh::bvhvec3 n      = face_normal(scene_.model(), prim);
-            const BsdfSample       bs     = bsdf.sample(rng, ray.D, n);
-            const tinybvh::bvhvec3 dir    = bs.dir;
+            // Russian roulette.
+            const float prr = std::max(0.05f, std::min(0.95f, max_component(weight)));
+            if (rng.uniform() >= prr) break;
+            weight.x /= prr; weight.y /= prr; weight.z /= prr;
+
+            const tinybvh::bvhvec3 normal = face_normal(scene_.model(), prim);
+            const BsdfSample       bs     = bsdf.sample(rng, ray.D, normal);
+            weight.x *= bs.weight.x; weight.y *= bs.weight.y; weight.z *= bs.weight.z;
 
             // Medium switch on any transmissive event (MediumShell pass-through or
-            // Dielectric refraction). Flipping inside/outside is robust to inconsistent
-            // face winding. Reflective events (Diffuse, Conductor, Dielectric reflect)
-            // keep the current medium.
+            // Dielectric refraction).
             if (bs.is_refract) {
                 const uint32_t in_id  = scene_.medium_in_at(prim);
                 const uint32_t out_id = scene_.medium_out_at(prim);
@@ -96,12 +110,15 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
 
             // Orient the unoriented face normal toward the new ray direction so the
             // offset always pushes the origin to the side the ray is leaving toward.
-            const float ns = (n.x*dir.x + n.y*dir.y + n.z*dir.z) >= 0.0f ? 1.0f : -1.0f;
+            const tinybvh::bvhvec3& dir = bs.dir;
+            const float ns = (normal.x*dir.x + normal.y*dir.y + normal.z*dir.z) >= 0.0f
+                                 ? 1.0f : -1.0f;
 
-            // Offset along the normal (not dir) to avoid lateral drift that could push
-            // the origin past an adjacent face at corners, desyncing the medium tracker.
+            // Offset along the normal to avoid lateral drift at corners.
             ray = tinybvh::Ray{
-                {p.x + kEps * n.x * ns, p.y + kEps * n.y * ns, p.z + kEps * n.z * ns}, dir};
+                {p.x + kEps * normal.x * ns,
+                 p.y + kEps * normal.y * ns,
+                 p.z + kEps * normal.z * ns}, dir};
         }
     }
 }

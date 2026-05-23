@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "bsdf.hpp"
@@ -118,9 +119,10 @@ TEST_CASE("PhotonTracer: photons bounce inside a closed box — point count scal
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};  // default bsdf id 0 == Diffuse
-    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}};
-
     constexpr uint32_t kN = 20000;
+    // Power set to kN so init_weight = 1; prr ≈ 0.95, giving ~3× points at depth 3.
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f},
+                     {static_cast<float>(kN), static_cast<float>(kN), static_cast<float>(kN)}};
 
     PhotonTracer t1{scene, bvh, light};
     Rng rng1{1u};
@@ -266,10 +268,13 @@ TEST_CASE("PhotonTracer: beams stay contained across three nested medium cubes",
     scene.set_medium(2u, Medium{/*sigma_s=*/4.0f, /*sigma_a=*/0.0f});
     scene.set_medium(3u, Medium{/*sigma_s=*/4.0f, /*sigma_a=*/0.0f});
 
-    PointLight light{tinybvh::bvhvec3{0.0f, 1.2f, 0.0f}};
+    // Power = N so init_weight = 1 and prr ≈ 0.95; photons survive all three shells.
+    constexpr uint32_t kN3 = 100000;
+    PointLight light{tinybvh::bvhvec3{0.0f, 1.2f, 0.0f},
+                     {static_cast<float>(kN3), static_cast<float>(kN3), static_cast<float>(kN3)}};
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{321u};
-    tracer.trace(/*photon_count=*/100000, /*max_depth=*/64, rng);
+    tracer.trace(/*photon_count=*/kN3, /*max_depth=*/64, rng);
 
     REQUIRE(!tracer.beams().empty());
 
@@ -333,4 +338,48 @@ TEST_CASE("PhotonTracer: passing through a medium-shell switches the current med
     for (const auto& b : tracer.beams()) {
         REQUIRE(b.medium_id == 1u);
     }
+}
+
+TEST_CASE("PhotonTracer: stored point carries light power / N on first diffuse hit",
+          "[photon_tracer][power]") {
+    // N=1: init_weight = power / 1. Closed box guarantees a hit.
+    // RR is applied after storing the point, so the stored power equals init_weight.
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+
+    Scene scene{model};
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, {2.0f, 4.0f, 6.0f}};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{0u};
+    tracer.trace(/*photon_count=*/1, /*max_depth=*/1, rng);
+
+    REQUIRE(tracer.points().size() == 1u);
+    const auto& p = tracer.points()[0];
+    REQUIRE(p.power.x == Catch::Approx(2.0f));
+    REQUIRE(p.power.y == Catch::Approx(4.0f));
+    REQUIRE(p.power.z == Catch::Approx(6.0f));
+}
+
+TEST_CASE("PhotonTracer: beam power equals incident weight at scatter point",
+          "[photon_tracer][power][medium]") {
+    // Very dense medium (sigma_s=1000) forces an immediate scatter; beam.power = init_weight.
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+
+    Scene scene{model};
+    scene.set_medium(1u, Medium{/*sigma_s=*/1000.0f, /*sigma_a=*/0.0f});
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, {3.0f, 5.0f, 7.0f}, /*medium_id=*/1u};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{0u};
+    tracer.trace(/*photon_count=*/1, /*max_depth=*/1, rng);
+
+    REQUIRE(!tracer.beams().empty());
+    const auto& b = tracer.beams()[0];
+    REQUIRE(b.power.x == Catch::Approx(3.0f));
+    REQUIRE(b.power.y == Catch::Approx(5.0f));
+    REQUIRE(b.power.z == Catch::Approx(7.0f));
 }

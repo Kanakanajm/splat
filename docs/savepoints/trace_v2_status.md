@@ -132,8 +132,22 @@ estimator. Alternative — Option B (beam.cpp): `weight *= exp(−σ_t · t_hit)
 | ~~2~~ | ~~Conductor BSDF — mirror direction, `weight = bsdf.color`~~ ✅ | `src/bsdf.cpp` |
 | ~~3~~ | ~~`fresnelDielectric` + Dielectric BSDF~~ ✅ | `include/bsdf.hpp`, `src/bsdf.cpp` |
 | ~~4~~ | ~~`PointLight::power` + JSON wiring~~ ✅ | `include/point_light.hpp`, `include/scene_config.hpp`, `src/scene_config.cpp`, `assets/.../CornellBox-Original_fixed.json` |
-| 5 | Power fields on `PhotonBeam` / `PhotonPoint` | `include/photon.hpp` |
-| 6 | Weight tracking in `PhotonTracer` — init, RR, scatter albedo, Dielectric medium switch | `src/photon_tracer.cpp` |
+| ~~5~~ | ~~Power fields on `PhotonBeam` / `PhotonPoint`~~ ✅ | `include/photon.hpp` |
+| ~~6~~ | ~~Weight tracking in `PhotonTracer` — init, RR, scatter albedo, Dielectric medium switch~~ ✅ | `src/photon_tracer.cpp` |
 | 7 | Power AOVs — 5 new view modes | `src/scene_gl.cpp`, `src/debug_ui.cpp`, `shaders/point.{vs,fs}`, `shaders/beam.{vs,fs}` |
 
-## Status: In Progress (4/7 tasks done)
+## Implementation Notes
+
+**OBJ scene files need `usemtl` per object** — assimp's OBJ loader only creates separate
+meshes when the material changes between `o` groups. Without `usemtl`, all geometry is
+merged into a single instance and `find_instance()` assigns one BSDF to all triangles.
+Fix: add `mtllib` + per-object `usemtl` entries (see `ball-lens.obj` / `ball-lens.mtl`).
+
+**Beam segment corrected** — V1 stored beam as `{scatter_point, surface_hit}` (reversed).
+Corrected to `{ray.O, scatter_point}`: beam spans the path actually traveled before scatter.
+
+**Tests with RR** — tests that check multi-bounce point counts must set `light.power = N`
+(so `init_weight = 1`, `prr ≈ 0.95`). Default power `{1,1,1}` with large N gives
+`init_weight ≈ 1/N` → `prr` clamped to 0.05 → most photons die after first surface hit.
+
+## Status: In Progress (6/7 tasks done)
