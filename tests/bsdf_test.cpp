@@ -85,7 +85,7 @@ TEST_CASE("Bsdf: diffuse scatters to the incident side", "[bsdf]") {
     const bvhvec3 incoming = normalize({0.3f, 0.0f, -1.0f});
 
     for (int i = 0; i < 5000; ++i) {
-        const bvhvec3 out = diffuse.sample(rng, incoming, normal);
+        const auto out = diffuse.sample(rng, incoming, normal).dir;
         REQUIRE(dot(out, out) == Catch::Approx(1.0f).margin(1e-4f));
         // Reflects back to the side the photon came from (same side as the geometric normal).
         REQUIRE(dot(out, normal) >= -1e-5f);
@@ -100,7 +100,7 @@ TEST_CASE("Bsdf: diffuse handles a back-facing geometric normal", "[bsdf]") {
     const bvhvec3 incoming{0.0f, 0.0f, -1.0f};
 
     for (int i = 0; i < 5000; ++i) {
-        const bvhvec3 out = diffuse.sample(rng, incoming, normal);
+        const auto out = diffuse.sample(rng, incoming, normal).dir;
         // Scatters back toward where the photon came from (opposite to travel direction).
         REQUIRE(dot(out, incoming) <= 1e-5f);
     }
@@ -112,11 +112,12 @@ TEST_CASE("Bsdf: medium shell passes the ray straight through", "[bsdf]") {
     const bvhvec3 normal{0.0f, 0.0f, 1.0f};
     const bvhvec3 incoming = normalize({0.2f, -0.3f, -1.0f});
 
-    const bvhvec3 out = shell.sample(rng, incoming, normal);
+    const auto bs = shell.sample(rng, incoming, normal);
     // No deflection: outgoing == incoming regardless of the normal orientation.
-    REQUIRE(out.x == Catch::Approx(incoming.x));
-    REQUIRE(out.y == Catch::Approx(incoming.y));
-    REQUIRE(out.z == Catch::Approx(incoming.z));
+    REQUIRE(bs.dir.x == Catch::Approx(incoming.x));
+    REQUIRE(bs.dir.y == Catch::Approx(incoming.y));
+    REQUIRE(bs.dir.z == Catch::Approx(incoming.z));
+    REQUIRE(bs.is_refract == true);
 }
 
 TEST_CASE("Scene: bsdf table defaults id 0 to diffuse and stores entries", "[bsdf][scene]") {

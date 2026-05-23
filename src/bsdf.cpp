@@ -2,13 +2,12 @@
 
 #include "sampling.hpp"
 
-tinybvh::bvhvec3 Bsdf::sample(Rng& rng,
-                              const tinybvh::bvhvec3& incoming,
-                              const tinybvh::bvhvec3& normal) const {
-    // Medium shell: a pass-through interface. No deflection — the photon
-    // continues straight; the tracer handles the medium switch separately.
+BsdfSample Bsdf::sample(Rng& rng,
+                        const tinybvh::bvhvec3& incoming,
+                        const tinybvh::bvhvec3& normal) const {
+    // Medium shell: pass-through, no deflection. Tracer handles medium switch via is_refract.
     if (kind == BsdfKind::MediumShell) {
-        return incoming;
+        return {incoming, {1.0f, 1.0f, 1.0f}, /*is_refract=*/true};
     }
 
     // Orient the shading normal onto the incident side so the scattered photon
@@ -18,6 +17,6 @@ tinybvh::bvhvec3 Bsdf::sample(Rng& rng,
     const tinybvh::bvhvec3 n =
         (ndi <= 0.0f) ? normal : tinybvh::bvhvec3{-normal.x, -normal.y, -normal.z};
 
-    // Only diffuse is implemented in this chunk.
-    return sample_cosine_hemisphere(rng, n);
+    // Diffuse: cosine-hemisphere direction; weight = albedo (cosine and PDF cancel).
+    return {sample_cosine_hemisphere(rng, n), color, /*is_refract=*/false};
 }

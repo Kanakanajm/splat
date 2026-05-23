@@ -80,16 +80,15 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
                 points_.push_back({p, bsdf_id, scene_.model().instance_id(prim), depth});
             }
 
-            const tinybvh::bvhvec3 n   = face_normal(scene_.model(), prim);
-            const tinybvh::bvhvec3 dir = bsdf.sample(rng, ray.D, n);
+            const tinybvh::bvhvec3 n      = face_normal(scene_.model(), prim);
+            const BsdfSample       bs     = bsdf.sample(rng, ray.D, n);
+            const tinybvh::bvhvec3 dir    = bs.dir;
 
-            // Medium switch on a transmissive (pass-through) event: flip between the
-            // surface's inside/outside media. Flipping (rather than picking by the
-            // normal's sign) is robust to inconsistent face winding, so a closed
-            // shell contains its medium regardless of how the mesh is wound.
-            // Diffuse/specular reflections keep the current medium; dielectric
-            // refraction is deferred (see trace_v1_status.md chunk 6).
-            if (bsdf.kind == BsdfKind::MediumShell) {
+            // Medium switch on any transmissive event (MediumShell pass-through or
+            // Dielectric refraction). Flipping inside/outside is robust to inconsistent
+            // face winding. Reflective events (Diffuse, Conductor, Dielectric reflect)
+            // keep the current medium.
+            if (bs.is_refract) {
                 const uint32_t in_id  = scene_.medium_in_at(prim);
                 const uint32_t out_id = scene_.medium_out_at(prim);
                 m = (m == in_id) ? out_id : in_id;
