@@ -1,0 +1,16 @@
+{
+  "light": {
+    "position": [0.0, 0.0, 0.0],
+    "power": [30000.0, 30000.0, 30000.0],
+    "medium": "fog"
+  },
+  "mediums": {
+    "fog": { "sigma_s": 5.0, "sigma_a": 0.0 }
+  },
+  "bsdfs": {
+    "white": { "kind": "Diffuse", "color": [1.0, 1.0, 1.0] }
+  },
+  "instances": {
+    "box": { "bsdf": "white" }
+  }
+}

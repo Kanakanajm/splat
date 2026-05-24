@@ -196,6 +196,27 @@ int main(int argc, char **argv) {
       scene.draw_beams(beamShader, static_cast<int>(vs.beamAov), vs.mediumBeamsVisible, beamBounceFilter);
     }
 
+    // Pixel picker: sample on left-click edge, not consumed by ImGui.
+    // glReadPixels reads the back buffer after all scene draws.
+    {
+        static bool sPrevLeftDown = false;
+        const bool leftDown = !uiWantsMouse &&
+            glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        if (leftDown && !sPrevLeftDown) {
+            double mx, my;
+            glfwGetCursorPos(window, &mx, &my);
+            int winW, winH;
+            glfwGetWindowSize(window, &winW, &winH);
+            const int fbX = static_cast<int>(mx * framebufferWidth  / winW);
+            const int fbY = framebufferHeight - 1 -
+                            static_cast<int>(my * framebufferHeight / winH);
+            float px[3]{};
+            glReadPixels(fbX, fbY, 1, 1, GL_RGB, GL_FLOAT, px);
+            debugUi->pick(px[0], px[1], px[2]);
+        }
+        sPrevLeftDown = leftDown;
+    }
+
     const uint32_t instance_count = rayModel.instance_count();
     const uint32_t medium_count   = scene.medium_count();
     if (debugUi->draw(camera, vsyncEnabled, instance_count, medium_count,

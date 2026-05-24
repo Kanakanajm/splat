@@ -10,6 +10,7 @@
 #include "ray_model.hpp"
 #include "scene.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -360,6 +361,172 @@ TEST_CASE("PhotonTracer: stored point carries light power / N on first diffuse h
     REQUIRE(p.power.x == Catch::Approx(2.0f));
     REQUIRE(p.power.y == Catch::Approx(4.0f));
     REQUIRE(p.power.z == Catch::Approx(6.0f));
+}
+
+// ─── Sanity checks: energy conservation ──────────────────────────────────
+
+TEST_CASE("PhotonTracer [sanity]: depth-0 surface power sum equals light flux",
+          "[photon_tracer][power][sanity]") {
+    // Closed box, default diffuse, vacuum. All N photons hit at depth 0.
+    // Each stores power = light.power/N, so the aggregate sum = light.power.
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    constexpr uint32_t kN = 100'000;
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{42u};
+    tracer.trace(kN, /*max_depth=*/1, rng);
+
+    float sum_r = 0.0f, sum_g = 0.0f, sum_b = 0.0f;
+    for (const auto& p : tracer.points())
+        if (p.bounce_depth == 0) { sum_r += p.power.x; sum_g += p.power.y; sum_b += p.power.z; }
+
+    REQUIRE(sum_r == Catch::Approx(1.0f).epsilon(0.02f));
+    REQUIRE(sum_g == Catch::Approx(1.0f).epsilon(0.02f));
+    REQUIRE(sum_b == Catch::Approx(1.0f).epsilon(0.02f));
+}
+
+TEST_CASE("PhotonTracer [sanity]: surface power ratio per depth equals albedo",
+          "[photon_tracer][power][sanity]") {
+    // Closed box, diffuse albedo=0.5, no medium.
+    // Each bounce multiplies the running weight by albedo; RR is unbiased, so
+    // E[sum at depth k+1] / E[sum at depth k] = albedo.
+    // light.power = N so init_weight = 1.0 and prr ≈ 0.95 rather than the 0.05 clamp.
+    constexpr float    kAlbedo = 0.5f;
+    constexpr uint32_t kN      = 100'000;
+    constexpr uint32_t kDepths = 5;
+
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    scene.set_bsdf(1u, Bsdf{BsdfKind::Diffuse, 1.0f, {kAlbedo, kAlbedo, kAlbedo}});
+    scene.set_instance_bsdf(0u, 1u);
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f},
+                     {static_cast<float>(kN), static_cast<float>(kN), static_cast<float>(kN)}};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{42u};
+    tracer.trace(kN, kDepths, rng);
+
+    std::array<float, kDepths> depth_sum{};
+    for (const auto& p : tracer.points())
+        if (p.bounce_depth < kDepths) depth_sum[p.bounce_depth] += p.power.x;
+
+    for (uint32_t k = 0; k + 1 < kDepths; ++k) {
+        REQUIRE(depth_sum[k] > 0.0f);
+        const float ratio = depth_sum[k + 1] / depth_sum[k];
+        INFO("k=" << k << " sum[k]=" << depth_sum[k] << " ratio=" << ratio);
+        REQUIRE(ratio == Catch::Approx(kAlbedo).epsilon(0.05f));
+    }
+}
+
+TEST_CASE("PhotonTracer [sanity]: depth-0 beam power sum equals light flux",
+          "[photon_tracer][power][sanity][medium]") {
+    // Dense medium (sigma_s=100): mean free path = 0.01, well inside the 10x10x10 box.
+    // All N photons scatter at depth 0. Each beam stores power = light.power/N, sum = light.power.
+    RayModel model{make_box({-5.0f, -5.0f, -5.0f}, {5.0f, 5.0f, 5.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    scene.set_medium(1u, Medium{/*sigma_s=*/100.0f, /*sigma_a=*/0.0f});
+    constexpr uint32_t kN = 100'000;
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, /*medium_id=*/1u};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{42u};
+    tracer.trace(kN, /*max_depth=*/1, rng);
+
+    float sum_r = 0.0f, sum_g = 0.0f, sum_b = 0.0f;
+    for (const auto& b : tracer.beams())
+        if (b.bounce_depth == 0) { sum_r += b.power.x; sum_g += b.power.y; sum_b += b.power.z; }
+
+    REQUIRE(sum_r == Catch::Approx(1.0f).epsilon(0.02f));
+    REQUIRE(sum_g == Catch::Approx(1.0f).epsilon(0.02f));
+    REQUIRE(sum_b == Catch::Approx(1.0f).epsilon(0.02f));
+}
+
+TEST_CASE("PhotonTracer [sanity]: beam power ratio per depth equals single-scatter albedo",
+          "[photon_tracer][power][sanity][medium]") {
+    // Dense medium (sigma_s=100): photons scatter within 0.05 units across 5 bounces,
+    // never reaching the 10x10x10 walls — all depth-k records are beams.
+    // At each scatter weight *= sigma_s/sigma_t; RR is unbiased, so
+    // E[sum at depth k+1] / E[sum at depth k] = sigma_s/sigma_t.
+    // light.power = N so init_weight = 1.0 (avoids the 0.05 prr clamp).
+    constexpr uint32_t kN      = 100'000;
+    constexpr uint32_t kDepths = 5;
+    constexpr float    kSigmaS = 100.0f;
+
+    RayModel model{make_box({-5.0f, -5.0f, -5.0f}, {5.0f, 5.0f, 5.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+
+    auto run = [&](float sigma_a) {
+        const float expected_albedo = kSigmaS / (kSigmaS + sigma_a);
+        Scene scene{model};
+        scene.set_medium(1u, Medium{kSigmaS, sigma_a});
+        PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f},
+                         {static_cast<float>(kN), static_cast<float>(kN), static_cast<float>(kN)},
+                         /*medium_id=*/1u};
+        PhotonTracer tracer{scene, bvh, light};
+        Rng rng{42u};
+        tracer.trace(kN, kDepths, rng);
+
+        std::array<float, kDepths> depth_sum{};
+        for (const auto& b : tracer.beams())
+            if (b.bounce_depth < kDepths) depth_sum[b.bounce_depth] += b.power.x;
+
+        for (uint32_t k = 0; k + 1 < kDepths; ++k) {
+            REQUIRE(depth_sum[k] > 0.0f);
+            const float ratio = depth_sum[k + 1] / depth_sum[k];
+            INFO("sigma_a=" << sigma_a << " k=" << k << " ratio=" << ratio
+                            << " expected=" << expected_albedo);
+            REQUIRE(ratio == Catch::Approx(expected_albedo).epsilon(0.05f));
+        }
+    };
+
+    SECTION("no absorption: albedo = 1")            { run(0.0f);  }
+    SECTION("partial absorption: sigma_a=20 → 0.83") { run(20.0f); }
+    SECTION("heavy absorption: sigma_a=50 → 0.67")   { run(50.0f); }
+}
+
+TEST_CASE("PhotonTracer [sanity]: combined per-depth power sum conserved in lossless scene",
+          "[photon_tracer][power][sanity]") {
+    // All-white diffuse walls (albedo=1) + purely-scattering medium (sigma_a=0) in a
+    // closed box. No energy loss anywhere. RR preserves expected power.
+    // sum(beams at depth k) + sum(points at depth k) ≈ light.power for all k.
+    constexpr uint32_t kN      = 100'000;
+    constexpr uint32_t kDepths = 4;
+
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    scene.set_bsdf(1u, Bsdf{BsdfKind::Diffuse, 1.0f, {1.0f, 1.0f, 1.0f}});
+    scene.set_instance_bsdf(0u, 1u);
+    scene.set_medium(1u, Medium{/*sigma_s=*/5.0f, /*sigma_a=*/0.0f});
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f},
+                     {static_cast<float>(kN), static_cast<float>(kN), static_cast<float>(kN)},
+                     /*medium_id=*/1u};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{42u};
+    tracer.trace(kN, kDepths, rng);
+
+    const float kExpected = static_cast<float>(kN);
+    for (uint32_t k = 0; k < kDepths; ++k) {
+        float sum = 0.0f;
+        for (const auto& b : tracer.beams())
+            if (b.bounce_depth == k) sum += b.power.x;
+        for (const auto& p : tracer.points())
+            if (p.bounce_depth == k) sum += p.power.x;
+        INFO("k=" << k << " sum=" << sum << " expected=" << kExpected);
+        REQUIRE(sum == Catch::Approx(kExpected).epsilon(0.05f));
+    }
 }
 
 TEST_CASE("PhotonTracer: beam power equals incident weight at scatter point",

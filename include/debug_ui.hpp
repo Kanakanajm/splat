@@ -14,14 +14,20 @@ struct ViewState {
 
     // --- Photon Points -------------------------------------------------------
     bool showPoints = true;
-    enum class PointAov : int { InstanceId, BsdfKind, BounceDepth } pointAov = PointAov::InstanceId;
+    enum class PointAov : int { InstanceId, BsdfKind, BounceDepth,
+                               PowerColor, PowerLuminance, PowerNormalized } pointAov = PointAov::InstanceId;
     std::vector<bool> instancePointsVisible;  // per-instance; empty = all visible
     bool allBounces      = true;   // show points from all bounce depths
     int  bounceFilter    = 0;      // active when allBounces == false
 
+    // --- Pixel picker --------------------------------------------------------
+    float pick_r = 0.0f, pick_g = 0.0f, pick_b = 0.0f;
+    bool  has_pick = false;
+
     // --- Photon Beams --------------------------------------------------------
     bool showBeams = true;
-    enum class BeamAov : int { MediumId, T, BounceDepth, Length } beamAov = BeamAov::MediumId;
+    enum class BeamAov : int { MediumId, T, BounceDepth, Length,
+                               BeamPowerStart, BeamTransmittancePreview } beamAov = BeamAov::MediumId;
     std::vector<bool> mediumBeamsVisible;  // per-medium; empty = all visible
     bool allBeamBounces   = true;
     int  beamBounceFilter = 0;
@@ -44,6 +50,8 @@ public:
 
     bool wantsMouse() const;
     bool wantsKeyboard() const;
+
+    void pick(float r, float g, float b);
 
     const ViewState& viewState() const { return state_; }
 

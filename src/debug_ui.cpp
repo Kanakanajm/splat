@@ -43,6 +43,11 @@ void DebugUi::endFrame() {
 bool DebugUi::wantsMouse()    const { return ImGui::GetIO().WantCaptureMouse; }
 bool DebugUi::wantsKeyboard() const { return ImGui::GetIO().WantCaptureKeyboard; }
 
+void DebugUi::pick(float r, float g, float b) {
+    state_.pick_r = r; state_.pick_g = g; state_.pick_b = b;
+    state_.has_pick = true;
+}
+
 // ---- sub-panels -------------------------------------------------------------
 
 void DebugUi::drawGeometryPanel() {
@@ -85,9 +90,12 @@ void DebugUi::drawPhotonPointPanel(uint32_t max_bounce) {
     ImGui::Text("AOV:");
     ImGui::SameLine();
     int p = static_cast<int>(state_.pointAov);
-    ImGui::RadioButton("InstanceId",  &p, static_cast<int>(ViewState::PointAov::InstanceId));  ImGui::SameLine();
-    ImGui::RadioButton("BsdfKind",    &p, static_cast<int>(ViewState::PointAov::BsdfKind));    ImGui::SameLine();
-    ImGui::RadioButton("BounceDepth##pt", &p, static_cast<int>(ViewState::PointAov::BounceDepth));
+    ImGui::RadioButton("InstanceId",      &p, static_cast<int>(ViewState::PointAov::InstanceId));       ImGui::SameLine();
+    ImGui::RadioButton("BsdfKind",        &p, static_cast<int>(ViewState::PointAov::BsdfKind));         ImGui::SameLine();
+    ImGui::RadioButton("BounceDepth##pt", &p, static_cast<int>(ViewState::PointAov::BounceDepth));      ImGui::SameLine();
+    ImGui::RadioButton("PowerColor",      &p, static_cast<int>(ViewState::PointAov::PowerColor));       ImGui::SameLine();
+    ImGui::RadioButton("PowerLum",        &p, static_cast<int>(ViewState::PointAov::PowerLuminance));   ImGui::SameLine();
+    ImGui::RadioButton("PowerNorm",       &p, static_cast<int>(ViewState::PointAov::PowerNormalized));
     state_.pointAov = static_cast<ViewState::PointAov>(p);
 
     ImGui::Checkbox("All bounces", &state_.allBounces);
@@ -124,10 +132,12 @@ void DebugUi::drawPhotonBeamPanel(uint32_t max_bounce) {
     ImGui::Text("AOV:");
     ImGui::SameLine();
     int b = static_cast<int>(state_.beamAov);
-    ImGui::RadioButton("MediumId",       &b, static_cast<int>(ViewState::BeamAov::MediumId));    ImGui::SameLine();
-    ImGui::RadioButton("T",              &b, static_cast<int>(ViewState::BeamAov::T));           ImGui::SameLine();
-    ImGui::RadioButton("BounceDepth##bm",&b, static_cast<int>(ViewState::BeamAov::BounceDepth)); ImGui::SameLine();
-    ImGui::RadioButton("Length",         &b, static_cast<int>(ViewState::BeamAov::Length));
+    ImGui::RadioButton("MediumId",        &b, static_cast<int>(ViewState::BeamAov::MediumId));              ImGui::SameLine();
+    ImGui::RadioButton("T",               &b, static_cast<int>(ViewState::BeamAov::T));                    ImGui::SameLine();
+    ImGui::RadioButton("BounceDepth##bm", &b, static_cast<int>(ViewState::BeamAov::BounceDepth));          ImGui::SameLine();
+    ImGui::RadioButton("Length",          &b, static_cast<int>(ViewState::BeamAov::Length));               ImGui::SameLine();
+    ImGui::RadioButton("Power",           &b, static_cast<int>(ViewState::BeamAov::BeamPowerStart));       ImGui::SameLine();
+    ImGui::RadioButton("Transmittance",   &b, static_cast<int>(ViewState::BeamAov::BeamTransmittancePreview));
     state_.beamAov = static_cast<ViewState::BeamAov>(b);
 
     ImGui::Checkbox("All bounces##bm", &state_.allBeamBounces);
@@ -178,6 +188,18 @@ bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
     ImGui::Text("Camera: (%.2f, %.2f, %.2f)  pitch %.1f  yaw %.1f",
                 camera.Position.x, camera.Position.y, camera.Position.z,
                 camera.Pitch, camera.Yaw);
+    ImGui::Separator();
+
+    // Pixel picker
+    if (state_.has_pick) {
+        ImGui::ColorButton("##pick",
+            ImVec4{state_.pick_r, state_.pick_g, state_.pick_b, 1.0f},
+            ImGuiColorEditFlags_NoTooltip, ImVec2(16, 16));
+        ImGui::SameLine();
+        ImGui::Text("R %.3f  G %.3f  B %.3f", state_.pick_r, state_.pick_g, state_.pick_b);
+    } else {
+        ImGui::TextDisabled("Left-click viewport to sample pixel");
+    }
     ImGui::Separator();
 
     drawGeometryPanel();

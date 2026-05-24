@@ -13,11 +13,12 @@
 | [scene_config_status.md](scene_config_status.md) | `trace` | JSON sidecar to assign BSDF/medium by object name; replaces hardcoded main.cpp setup. |
 | [trace_v1_status.md](trace_v1_status.md) | `trace` | CPU photon tracing pass: multi-bounce diffuse, free-flight media, medium-shell BSDF, beam/point GL visualization. 41/41 tests. |
 | [aov_debug_status.md](aov_debug_status.md) | `trace` | ViewState-driven debug AOVs: geometry wireframe/normals/depth/backface/diffuse, point/beam coloring modes, per-instance/per-medium/bounce-depth filters. 5/5 tasks done. |
+| [trace_v2_status.md](trace_v2_status.md) | `trace` | RGB power tracking, RR, Conductor/Dielectric BSDFs, power AOVs. 7/7 tasks done. |
+| [power_sanity_status.md](power_sanity_status.md) | `trace` | Energy-conservation sanity checks for V2 power tracking: surface albedo decay, beam albedo decay, combined lossless scene. 5/5 tests passing, visually verified. |
 
 # On-going
 
 | Savepoint | Branch | Summary |
 |---|---|---|
-| [trace_v2_status.md](trace_v2_status.md) | `trace` | RGB power tracking, RR, Conductor/Dielectric BSDFs, power AOVs. 0/7 tasks done. |
 | Opacity pass | `opacity` | Frustum slicing / depth peeling for camera-side attenuation maps. See `docs/project/opacity.md`. |
 | Splat pass | `splat` | Rasterize beams as billboard quads. See `docs/project/splat.md`. |
