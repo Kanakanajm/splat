@@ -529,6 +529,53 @@ TEST_CASE("PhotonTracer [sanity]: combined per-depth power sum conserved in loss
     }
 }
 
+TEST_CASE("PhotonTracer: stored point normal is unit-length and oriented toward photon origin",
+          "[photon_tracer][splat]") {
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    constexpr uint32_t kN = 5000;
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f},
+                     {static_cast<float>(kN), static_cast<float>(kN), static_cast<float>(kN)}};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{7u};
+    tracer.trace(kN, /*max_depth=*/1, rng);
+
+    REQUIRE(!tracer.points().empty());
+    for (const auto& p : tracer.points()) {
+        const float nlen = std::sqrt(p.normal.x*p.normal.x + p.normal.y*p.normal.y + p.normal.z*p.normal.z);
+        REQUIRE(nlen == Catch::Approx(1.0f).epsilon(1e-5f));
+
+        const float d = p.incoming_dir.x*p.normal.x + p.incoming_dir.y*p.normal.y + p.incoming_dir.z*p.normal.z;
+        REQUIRE(d < 0.0f);
+    }
+}
+
+TEST_CASE("PhotonTracer: stored point incoming_dir is unit-length",
+          "[photon_tracer][splat]") {
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    constexpr uint32_t kN = 5000;
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f},
+                     {static_cast<float>(kN), static_cast<float>(kN), static_cast<float>(kN)}};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{8u};
+    tracer.trace(kN, /*max_depth=*/3, rng);
+
+    REQUIRE(!tracer.points().empty());
+    for (const auto& p : tracer.points()) {
+        const float len = std::sqrt(p.incoming_dir.x*p.incoming_dir.x +
+                                    p.incoming_dir.y*p.incoming_dir.y +
+                                    p.incoming_dir.z*p.incoming_dir.z);
+        REQUIRE(len == Catch::Approx(1.0f).epsilon(1e-5f));
+    }
+}
+
 TEST_CASE("PhotonTracer: beam power equals incident weight at scatter point",
           "[photon_tracer][power][medium]") {
     // Very dense medium (sigma_s=1000) forces an immediate scatter; beam.power = init_weight.

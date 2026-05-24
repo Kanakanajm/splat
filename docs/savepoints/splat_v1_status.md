@@ -90,10 +90,10 @@ is handled by the existing geometry/Phong pass.
 
 | # | Task | Files |
 |---|---|---|
-| 1 | Add `normal` + `incoming_dir` to `PhotonPoint`; update `PhotonTracer` to record them | `include/photon.hpp`, `src/photon_tracer.cpp`, `tests/photon_tracer_test.cpp` |
+| ~~1~~ | ~~Add `normal` + `incoming_dir` to `PhotonPoint`; update `PhotonTracer` to record them~~ ✅ | `include/photon.hpp`, `src/photon_tracer.cpp`, `tests/photon_tracer_test.cpp` |
 | 2 | Kernel texture — CPU build + GL upload utility | `include/kernel_texture.hpp`, `src/kernel_texture.cpp`, `tests/kernel_texture_test.cpp` |
 | 3 | Splat shaders — `splat.vs`, `splat.gs`, `splat.fs` | `shaders/splat.{vs,gs,fs}` |
 | 4 | Scene GL — `upload_splats` / `draw_splats`; wire `splat_h` config + UI slider | `include/scene.hpp`, `src/scene_gl.cpp`, `src/scene_config.cpp`, `src/debug_ui.cpp` |
 | 5 | Render loop — depth-prepass → splat pass ordering; HDR framebuffer if needed | `src/main.cpp` |
 
-## Status: Planning
+## Status: In Progress (1/5 tasks done)
