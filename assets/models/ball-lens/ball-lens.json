@@ -1,0 +1,14 @@
+{
+  "light": {
+    "position": [2.0, 0.5, 0.0],
+    "medium": "vacuum"
+  },
+  "mediums": {
+  },
+  "bsdfs": {
+    "mirror": { "kind": "Conductor", "color": [1.0, 1.0, 1.0] }
+  },
+  "instances": {
+        "Sphere": { "bsdf": "mirror" }
+  }
+}

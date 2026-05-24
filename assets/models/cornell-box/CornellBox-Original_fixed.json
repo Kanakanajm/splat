@@ -1,0 +1,18 @@
+{
+  "light": {
+    "position": [0.0, 1.48, 2.18],
+    "medium": "vacuum"
+  },
+  "mediums": {
+    "fog": { "sigma_s": 8.0, "sigma_a": 1.0 },
+    "fog2": { "sigma_s": 4.0, "sigma_a": 2.0 }
+  },
+  "bsdfs": {
+    "shell": { "kind": "MediumShell" }
+  },
+  "instances": {
+    "tallBox": { "bsdf": "shell", "medium_in": "fog", "medium_out": "vacuum" },
+    "shortBox": { "bsdf": "shell", "medium_in": "fog2", "medium_out": "vacuum" }
+
+  }
+}
