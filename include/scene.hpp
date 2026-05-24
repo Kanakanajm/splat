@@ -79,6 +79,7 @@ private:
     std::vector<bool>        points_filter_cache_;
     int                      points_bounce_filter_cache_ = -2;  // -2 = uninitialized
     uint32_t                 points_max_bounce_ = 4u;
+    float                    points_power_max_  = 1.0f;
 
     // GL handles for the photon beam lines (0 until first upload).
     unsigned int beams_vao_         = 0;

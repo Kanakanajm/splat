@@ -134,7 +134,7 @@ estimator. Alternative — Option B (beam.cpp): `weight *= exp(−σ_t · t_hit)
 | ~~4~~ | ~~`PointLight::power` + JSON wiring~~ ✅ | `include/point_light.hpp`, `include/scene_config.hpp`, `src/scene_config.cpp`, `assets/.../CornellBox-Original_fixed.json` |
 | ~~5~~ | ~~Power fields on `PhotonBeam` / `PhotonPoint`~~ ✅ | `include/photon.hpp` |
 | ~~6~~ | ~~Weight tracking in `PhotonTracer` — init, RR, scatter albedo, Dielectric medium switch~~ ✅ | `src/photon_tracer.cpp` |
-| 7 | Power AOVs — 5 new view modes | `src/scene_gl.cpp`, `src/debug_ui.cpp`, `shaders/point.{vs,fs}`, `shaders/beam.{vs,fs}` |
+| ~~7~~ | ~~Power AOVs — 5 new view modes~~ ✅ | `src/scene_gl.cpp`, `include/scene.hpp`, `include/debug_ui.hpp`, `src/debug_ui.cpp`, `shaders/point.{vs,fs}`, `shaders/beam.{vs,fs}` |
 
 ## Implementation Notes
 
@@ -150,4 +150,4 @@ Corrected to `{ray.O, scatter_point}`: beam spans the path actually traveled bef
 (so `init_weight = 1`, `prr ≈ 0.95`). Default power `{1,1,1}` with large N gives
 `init_weight ≈ 1/N` → `prr` clamped to 0.05 → most photons die after first surface hit.
 
-## Status: In Progress (6/7 tasks done)
+## Status: Complete (7/7 tasks done)

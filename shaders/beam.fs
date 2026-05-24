@@ -3,8 +3,13 @@ in float vMediumId;
 in float vT;
 in float vBounceDepth;
 in float vLength;
+in float vSigmaT;
+in vec3  vPower;
 
-uniform int   aov_mode;  // matches ViewState::BeamAov: 0=MediumId 1=T 2=BounceDepth 3=Length
+// aov_mode matches ViewState::BeamAov:
+//   0=MediumId  1=T  2=BounceDepth  3=Length
+//   4=BeamPowerStart  5=BeamTransmittancePreview
+uniform int   aov_mode;
 uniform float maxBounce;
 uniform float maxLength;
 
@@ -34,17 +39,17 @@ vec3 heatmap(float t) {
 void main() {
     vec3 color;
     if (aov_mode == 1) {
-        // T: gradient along beam from start (blue) to end (red)
-        color = heatmap(vT);
+        color = heatmap(vT);                                          // T
     } else if (aov_mode == 2) {
-        // BounceDepth: heatmap normalized by maxBounce
-        color = heatmap(maxBounce > 0.0 ? vBounceDepth / maxBounce : 0.0);
+        color = heatmap(maxBounce > 0.0 ? vBounceDepth / maxBounce : 0.0); // BounceDepth
     } else if (aov_mode == 3) {
-        // Length: heatmap normalized by maxLength
-        color = heatmap(maxLength > 0.0 ? vLength / maxLength : 0.0);
+        color = heatmap(maxLength > 0.0 ? vLength / maxLength : 0.0);      // Length
+    } else if (aov_mode == 4) {
+        color = vPower;                                               // BeamPowerStart
+    } else if (aov_mode == 5) {
+        color = vPower * exp(-vSigmaT * vLength);                    // BeamTransmittancePreview
     } else {
-        // MediumId: per-medium palette color
-        color = medium_color(int(vMediumId));
+        color = medium_color(int(vMediumId));                         // MediumId (default)
     }
     FragColor = vec4(color, 1.0);
 }
