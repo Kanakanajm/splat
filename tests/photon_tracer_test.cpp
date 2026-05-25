@@ -63,10 +63,10 @@ TEST_CASE("PhotonTracer: photons land on Suzanne and project into a debug PPM",
     Rng rng{0xDECAFu};
 
     constexpr uint32_t kN = 50000;
-    tracer.trace(kN, /*max_depth=*/1, rng);
+    tracer.trace(kN, /*max_depth=*/2, rng);
 
     INFO("photons stored=" << tracer.points().size() << " of " << kN);
-    REQUIRE(tracer.points().size() > kN / 100);
+    REQUIRE(!tracer.points().empty());
     REQUIRE(tracer.points().size() <= kN);
 
     // Suzanne's geometry sits well within a [-2, 2]^3 box.
@@ -121,26 +121,29 @@ TEST_CASE("PhotonTracer: photons bounce inside a closed box — point count scal
 
     Scene scene{model};  // default bsdf id 0 == Diffuse
     constexpr uint32_t kN = 20000;
-    // Power set to kN so init_weight = 1; prr ≈ 0.95, giving ~3× points at depth 3.
+    // Power set to kN so init_weight = 1; prr = albedo ≈ 0.8 (default Bsdf::color).
+    // depth-0 hits are not stored; depth-1 stores ~0.8N points (prr survivors).
+    // max_depth=2 → only depth-1 stored (≈0.8N).
+    // max_depth=4 → depths 1,2,3 stored (≈0.8N + 0.64N + 0.51N ≈ 1.95N), ratio ≈ 2.44.
     PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f},
                      {static_cast<float>(kN), static_cast<float>(kN), static_cast<float>(kN)}};
 
     PhotonTracer t1{scene, bvh, light};
     Rng rng1{1u};
-    t1.trace(kN, /*max_depth=*/1, rng1);
+    t1.trace(kN, /*max_depth=*/2, rng1);
     const size_t c1 = t1.points().size();
 
     PhotonTracer t3{scene, bvh, light};
     Rng rng3{1u};
-    t3.trace(kN, /*max_depth=*/3, rng3);
+    t3.trace(kN, /*max_depth=*/4, rng3);
     const size_t c3 = t3.points().size();
 
     INFO("c1=" << c1 << " c3=" << c3);
-    // Closed box: every emitted ray hits a wall, so depth 1 stores ~N points.
-    REQUIRE(c1 > static_cast<size_t>(kN * 0.99));
+    // Closed box: depth-1 stores ~0.8N points (prr survivors from depth-0 bounce).
+    REQUIRE(c1 > static_cast<size_t>(kN * 0.7));
     REQUIRE(c1 <= kN);
-    // Each photon keeps bouncing; depth 3 stores points well past the first surface.
-    REQUIRE(c3 > c1 * 5 / 2);
+    // Each photon keeps bouncing; 3 indirect depths stored well more than 1.
+    REQUIRE(c3 > c1 * 2);
     // Vacuum scene ⇒ no medium scattering ⇒ no beams.
     REQUIRE(t3.beams().empty());
 
@@ -350,43 +353,50 @@ TEST_CASE("PhotonTracer: stored point carries light power / N on first diffuse h
     tinybvh::BVH bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
+    // depth-0 is not stored; first stored bounce is depth-1. With albedo-based RR
+    // (prr = albedo), weight / prr * albedo = weight, so stored power == init_weight.
     Scene scene{model};
-    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, {2.0f, 4.0f, 6.0f}};
+    constexpr uint32_t kN2 = 100u;
+    PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f},
+                     {2.0f * kN2, 4.0f * kN2, 6.0f * kN2}};  // init_weight = {2,4,6}
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{0u};
-    tracer.trace(/*photon_count=*/1, /*max_depth=*/1, rng);
+    tracer.trace(kN2, /*max_depth=*/2, rng);
 
-    REQUIRE(tracer.points().size() == 1u);
-    const auto& p = tracer.points()[0];
-    REQUIRE(p.power.x == Catch::Approx(2.0f));
-    REQUIRE(p.power.y == Catch::Approx(4.0f));
-    REQUIRE(p.power.z == Catch::Approx(6.0f));
+    REQUIRE(!tracer.points().empty());
+    for (const auto& p : tracer.points()) {
+        REQUIRE(p.power.x == Catch::Approx(2.0f).epsilon(1e-5f));
+        REQUIRE(p.power.y == Catch::Approx(4.0f).epsilon(1e-5f));
+        REQUIRE(p.power.z == Catch::Approx(6.0f).epsilon(1e-5f));
+    }
 }
 
 // ─── Sanity checks: energy conservation ──────────────────────────────────
 
-TEST_CASE("PhotonTracer [sanity]: depth-0 surface power sum equals light flux",
+TEST_CASE("PhotonTracer [sanity]: depth-1 surface power sum equals albedo * light flux",
           "[photon_tracer][power][sanity]") {
-    // Closed box, default diffuse, vacuum. All N photons hit at depth 0.
-    // Each stores power = light.power/N, so the aggregate sum = light.power.
+    // Closed box, default diffuse (albedo=0.8), vacuum. depth-0 hits are not stored.
+    // Depth-1 survivors = N * prr = N * 0.8, each carrying init_weight = P/N.
+    // Sum at depth-1 = 0.8N * (P/N) = 0.8 * P.
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
     tinybvh::BVH bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
-    constexpr uint32_t kN = 100'000;
+    constexpr uint32_t kN     = 100'000;
+    constexpr float    kAlbedo = 0.8f;  // default Bsdf::color max component
     PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}};
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{42u};
-    tracer.trace(kN, /*max_depth=*/1, rng);
+    tracer.trace(kN, /*max_depth=*/2, rng);
 
     float sum_r = 0.0f, sum_g = 0.0f, sum_b = 0.0f;
     for (const auto& p : tracer.points())
-        if (p.bounce_depth == 0) { sum_r += p.power.x; sum_g += p.power.y; sum_b += p.power.z; }
+        if (p.bounce_depth == 1) { sum_r += p.power.x; sum_g += p.power.y; sum_b += p.power.z; }
 
-    REQUIRE(sum_r == Catch::Approx(1.0f).epsilon(0.02f));
-    REQUIRE(sum_g == Catch::Approx(1.0f).epsilon(0.02f));
-    REQUIRE(sum_b == Catch::Approx(1.0f).epsilon(0.02f));
+    REQUIRE(sum_r == Catch::Approx(kAlbedo).epsilon(0.02f));
+    REQUIRE(sum_g == Catch::Approx(kAlbedo).epsilon(0.02f));
+    REQUIRE(sum_b == Catch::Approx(kAlbedo).epsilon(0.02f));
 }
 
 TEST_CASE("PhotonTracer [sanity]: surface power ratio per depth equals albedo",
@@ -394,7 +404,7 @@ TEST_CASE("PhotonTracer [sanity]: surface power ratio per depth equals albedo",
     // Closed box, diffuse albedo=0.5, no medium.
     // Each bounce multiplies the running weight by albedo; RR is unbiased, so
     // E[sum at depth k+1] / E[sum at depth k] = albedo.
-    // light.power = N so init_weight = 1.0 and prr ≈ 0.95 rather than the 0.05 clamp.
+    // light.power = N so init_weight = 1.0. depth-0 not stored; ratios checked from depth 1.
     constexpr float    kAlbedo = 0.5f;
     constexpr uint32_t kN      = 100'000;
     constexpr uint32_t kDepths = 5;
@@ -416,7 +426,7 @@ TEST_CASE("PhotonTracer [sanity]: surface power ratio per depth equals albedo",
     for (const auto& p : tracer.points())
         if (p.bounce_depth < kDepths) depth_sum[p.bounce_depth] += p.power.x;
 
-    for (uint32_t k = 0; k + 1 < kDepths; ++k) {
+    for (uint32_t k = 1; k + 1 < kDepths; ++k) {
         REQUIRE(depth_sum[k] > 0.0f);
         const float ratio = depth_sum[k + 1] / depth_sum[k];
         INFO("k=" << k << " sum[k]=" << depth_sum[k] << " ratio=" << ratio);
@@ -541,7 +551,7 @@ TEST_CASE("PhotonTracer: stored point normal is unit-length and oriented toward 
                      {static_cast<float>(kN), static_cast<float>(kN), static_cast<float>(kN)}};
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{7u};
-    tracer.trace(kN, /*max_depth=*/1, rng);
+    tracer.trace(kN, /*max_depth=*/2, rng);
 
     REQUIRE(!tracer.points().empty());
     for (const auto& p : tracer.points()) {

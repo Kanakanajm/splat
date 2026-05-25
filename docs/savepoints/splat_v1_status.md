@@ -93,7 +93,44 @@ is handled by the existing geometry/Phong pass.
 | ~~1~~ | ~~Add `normal` + `incoming_dir` to `PhotonPoint`; update `PhotonTracer` to record them~~ ✅ | `include/photon.hpp`, `src/photon_tracer.cpp`, `tests/photon_tracer_test.cpp` |
 | ~~2~~ | ~~Kernel texture — CPU build + GL upload utility~~ ✅ | `include/kernel_texture.hpp`, `src/kernel_texture.cpp`, `tests/kernel_texture_test.cpp` |
 | ~~3~~ | ~~Splat shaders — `splat.vs`, `splat.gs`, `splat.fs`~~ ✅ | `shaders/splat.{vs,gs,fs}` |
-| 4 | Scene GL — `upload_splats` / `draw_splats`; wire `splat_h` config + UI slider | `include/scene.hpp`, `src/scene_gl.cpp`, `src/scene_config.cpp`, `src/debug_ui.cpp` |
-| 5 | Render loop — depth-prepass → splat pass ordering; HDR framebuffer if needed | `src/main.cpp` |
+| ~~4~~ | ~~Scene GL — `upload_splats` / `draw_splats`; wire `splat_h` UI slider~~ ✅ | `include/scene.hpp`, `src/scene_gl.cpp`, `include/debug_ui.hpp`, `src/debug_ui.cpp` |
+| ~~5~~ | ~~Render loop — splat pass after geometry; Shader GS constructor~~ ✅ | `src/main.cpp`, `include/shader.hpp`, `src/shader.cpp` |
 
-## Status: In Progress (3/5 tasks done)
+## Status: Complete (5/5 tasks done)
+
+---
+
+## Post-V1 Fixes (applied on branch `surface-splat`)
+
+| Fix | Description | Files |
+|-----|-------------|-------|
+| Backface culling + polygon offset | Splats now depth-test correctly against geometry; `GL_POLYGON_OFFSET_FILL(-1,-1)` avoids z-fighting between photon hit positions (CPU ray intersection) and rasterised geometry depths | `src/scene_gl.cpp` |
+| Depth prepass | When geometry pass is off, a color-masked geometry draw populates the depth buffer before the splat pass | `src/main.cpp` |
+| cos(θ) in radiance estimate | `vCosTheta = -dot(incomingDir, normal)` forwarded VS→GS→FS and multiplied into radiance | `shaders/splat.{vs,gs,fs}` |
+| Indirect-only filter moved to tracer | `depth > 0` guard in `photon_tracer.cpp`; `encode_splats` no longer filters | `src/photon_tracer.cpp`, `src/scene_gl.cpp` |
+| Albedo-based Russian roulette | `prr = max(0.01, min(0.99, max_component(bsdf.color)))` — survival rate independent of absolute photon power; avoids 95%-kill rate for dim lights | `src/photon_tracer.cpp` |
+| Hemispherical light emission | Optional `emit_dir` in JSON + `PointLight`; uses `sample_cosine_hemisphere` to avoid wasting photons through open scene boundary | `include/point_light.hpp`, `src/point_light.cpp`, `src/scene_config.cpp` |
+| CLI photon count arg | `./SplatApp <scene.obj> [N]`, default 30000 | `src/main.cpp` |
+
+---
+
+## Known Limitations → V1.5 Agenda
+
+### 0. Visual validation pending
+Cornell box indirect illumination has **not been visually verified** as correct. Shadowed areas on cube side-faces remain nearly black due to insufficient indirect photon density — too few photons reach occluded surfaces after one bounce. Root causes: open front face of Cornell box wastes photons (partially mitigated by `emit_dir`), and with N=300k the per-surface density is still too low for h≤0.15. Needs either higher N (>1M) or progressive accumulation before a meaningful visual comparison against the reference Cornell box render can be made.
+
+### 1. Surface bleeding
+Splat triangles extend past surface boundaries into adjacent geometry (walls meeting at corners, box faces). With large `h` the triangle covers neighbouring surfaces and the depth test accepts those fragments. The paper proposes a **stencil mask** per surface: render each surface's footprint into the stencil buffer, then draw its photons with `GL_EQUAL` stencil test. Requires N draw calls (one per instance/surface group) — deferred to V2.
+
+### 2. Splatting throughput
+GS-based pipeline becomes the bottleneck for N > ~100k photons (fillrate scales as h²·N). Options:
+- **Instancing** — replace GS with a pre-built unit triangle VBO and draw N instances; same triangle math, avoids GS bottleneck on some GPU architectures.
+- **Frustum + backface cull on CPU** — upload only photons on camera-facing surfaces within view frustum, reducing GPU draw count.
+- **Screen-space tile binning** — sort splats by tile, discard tiles outside frustum early.
+- **Reduce h** — cheapest fix; smaller triangles = fewer fragments.
+
+### 3. Direct lighting shadows
+The geometry/Phong pass (`geom.fs` AOV=Diffuse) has no shadow map, so all directly-lit surfaces receive light regardless of occlusion. Need:
+- Render depth map from light's POV → shadow map texture.
+- Sample it in `geom.fs` to attenuate `diff` where occluded.
+- Standard PCF for soft edges.

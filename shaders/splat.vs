@@ -9,13 +9,15 @@ layout(location = 4) in vec3 aBsdfColor;
 uniform mat4 model;
 
 out vec3 vsNormal;
+out vec3 vsIncomingDir;
 out vec3 vsPower;
 out vec3 vsBsdfColor;
 
 void main() {
     // Pass world-space position to GS; view*projection applied per emitted vertex.
-    gl_Position = model * vec4(aPos, 1.0);
-    vsNormal    = mat3(model) * aNormal;
-    vsPower     = aPower;
-    vsBsdfColor = aBsdfColor;
+    gl_Position   = model * vec4(aPos, 1.0);
+    vsNormal      = mat3(model) * aNormal;
+    vsIncomingDir = mat3(model) * aIncomingDir;
+    vsPower       = aPower;
+    vsBsdfColor   = aBsdfColor;
 }

@@ -3,6 +3,7 @@
 
 #include "scene.hpp"
 #include "shader.hpp"
+#include "kernel_texture.hpp"
 
 #include <cstdint>
 #include <glad/glad.h>
@@ -310,4 +311,108 @@ void Scene::draw_beams(Shader& shader, int aov_mode, const std::vector<bool>& me
     glBindVertexArray(beams_vao_);
     glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(beam_vertex_count_));
     glBindVertexArray(0);
+}
+
+// ---- Splat pass -------------------------------------------------------------
+
+namespace {
+
+// Layout per vertex (15 floats = 60 bytes):
+//   [0..2]   position    → shader location 0
+//   [3..5]   normal      → shader location 1
+//   [6..8]   incoming_dir → shader location 2 (reserved for glossy BRDF)
+//   [9..11]  power       → shader location 3
+//   [12..14] bsdf_color  → shader location 4
+std::vector<float> encode_splats(const std::vector<PhotonPoint>& points,
+                                 const std::vector<Bsdf>& bsdf_table) {
+    std::vector<float> data;
+    data.reserve(points.size() * 15);
+    for (const auto& p : points) {
+        const auto& col = bsdf_table[p.bsdf_id < bsdf_table.size() ? p.bsdf_id : 0].color;
+        data.push_back(p.position.x);    data.push_back(p.position.y);    data.push_back(p.position.z);
+        data.push_back(p.normal.x);      data.push_back(p.normal.y);      data.push_back(p.normal.z);
+        data.push_back(p.incoming_dir.x);data.push_back(p.incoming_dir.y);data.push_back(p.incoming_dir.z);
+        data.push_back(p.power.x);       data.push_back(p.power.y);       data.push_back(p.power.z);
+        data.push_back(col.x);           data.push_back(col.y);           data.push_back(col.z);
+    }
+    return data;
+}
+
+void upload_splats_vbo(unsigned int& vao, unsigned int& vbo, const std::vector<float>& data) {
+    if (vao == 0) glGenVertexArrays(1, &vao);
+    if (vbo == 0) glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(data.size() * sizeof(float)),
+                 data.data(), GL_STATIC_DRAW);
+    constexpr GLsizei stride = 15 * sizeof(float);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3  * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, stride, (void*)(6  * sizeof(float)));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, (void*)(9  * sizeof(float)));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, stride, (void*)(12 * sizeof(float)));
+    glBindVertexArray(0);
+}
+
+unsigned int upload_kernel_tex() {
+    constexpr int kSize = 64;
+    const auto data = build_kernel_texture(kSize);
+    unsigned int tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, kSize, kSize, 0, GL_RED, GL_FLOAT, data.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    const float border[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return tex;
+}
+
+}  // namespace (splat helpers)
+
+void Scene::upload_splats(const std::vector<PhotonPoint>& points) {
+    const auto data = encode_splats(points, bsdf_table_);
+    splat_vertex_count_ = static_cast<uint32_t>(data.size() / 15);
+    upload_splats_vbo(splats_vao_, splats_vbo_, data);
+    if (splat_kernel_tex_ == 0)
+        splat_kernel_tex_ = upload_kernel_tex();
+}
+
+void Scene::draw_splats(Shader& shader, float h) {
+    if (splats_vao_ == 0 || splat_vertex_count_ == 0) return;
+
+    shader.use();
+    shader.setFloat("h", h);
+    shader.setInt("kernelTex", 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, splat_kernel_tex_);
+
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glDepthFunc(GL_LEQUAL);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(-1.0f, -1.0f);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+    glDepthMask(GL_FALSE);
+
+    glBindVertexArray(splats_vao_);
+    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(splat_vertex_count_));
+    glBindVertexArray(0);
+
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glDepthFunc(GL_LESS);
+    glDisable(GL_CULL_FACE);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }

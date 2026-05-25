@@ -93,13 +93,14 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
 
             const uint32_t bsdf_id = scene_.bsdf_id_at(prim);
             const Bsdf&    bsdf    = scene_.bsdf(bsdf_id);
-            if (bsdf.kind == BsdfKind::Diffuse) {
+            if (bsdf.kind == BsdfKind::Diffuse && depth > 0) {
                 points_.push_back({p, oriented_n, ray.D,
                                    bsdf_id, scene_.model().instance_id(prim), depth, weight});
             }
 
-            // Russian roulette.
-            const float prr = std::max(0.05f, std::min(0.95f, max_component(weight)));
+            // Russian roulette: base prr on material albedo so survival rate is
+            // independent of absolute photon power (avoids near-zero prr for dim lights).
+            const float prr = std::max(0.01f, std::min(0.99f, max_component(bsdf.color)));
             if (rng.uniform() >= prr) break;
             weight.x /= prr; weight.y /= prr; weight.z /= prr;
 

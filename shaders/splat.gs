@@ -4,6 +4,7 @@ layout(points) in;
 layout(triangle_strip, max_vertices = 3) out;
 
 in vec3 vsNormal[];
+in vec3 vsIncomingDir[];
 in vec3 vsPower[];
 in vec3 vsBsdfColor[];
 
@@ -11,13 +12,18 @@ uniform mat4  view;
 uniform mat4  projection;
 uniform float h;  // kernel bandwidth
 
-out vec2 vUV;
-out vec3 vPower;
-out vec3 vBsdfColor;
+out vec2  vUV;
+out vec3  vPower;
+out vec3  vBsdfColor;
+out float vCosTheta;
 
 void main() {
     vec3 worldPos = gl_in[0].gl_Position.xyz;
     vec3 n        = normalize(vsNormal[0]);
+
+    // Cosine of angle between incoming photon direction and surface normal.
+    // normal is oriented so dot(incomingDir, normal) < 0, hence negation.
+    float cosTheta = max(0.0, -dot(normalize(vsIncomingDir[0]), n));
 
     // Orthonormal tangent frame in the surface plane.
     vec3 t1;
@@ -47,6 +53,7 @@ void main() {
         vUV        = vec2(0.5) + ofs[i] / (2.0 * h);
         vPower     = vsPower[0];
         vBsdfColor = vsBsdfColor[0];
+        vCosTheta  = cosTheta;
         EmitVertex();
     }
     EndPrimitive();

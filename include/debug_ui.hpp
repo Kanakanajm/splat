@@ -24,6 +24,10 @@ struct ViewState {
     float pick_r = 0.0f, pick_g = 0.0f, pick_b = 0.0f;
     bool  has_pick = false;
 
+    // --- Splat pass ----------------------------------------------------------
+    bool  showSplat = false;
+    float splatH    = 0.1f;
+
     // --- Photon Beams --------------------------------------------------------
     bool showBeams = true;
     enum class BeamAov : int { MediumId, T, BounceDepth, Length,
@@ -59,6 +63,7 @@ private:
     void drawGeometryPanel();
     void drawPhotonPointPanel(uint32_t max_bounce);
     void drawPhotonBeamPanel(uint32_t max_bounce);
+    void drawSplatPanel();
 
     ViewState state_;
     bool showDemoWindow_ = false;

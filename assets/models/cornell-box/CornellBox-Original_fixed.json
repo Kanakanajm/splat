@@ -1,18 +1,24 @@
 {
   "light": {
-    "position": [0.0, 1.48, 2.18],
-    "medium": "vacuum"
+    "position": [0.0, 1.98, 0.0],
+    "power": [10.0, 10.0, 10.0],
+    "emit_dir": [0.0, -1.0, 0.0]
   },
   "mediums": {
-    "fog": { "sigma_s": 8.0, "sigma_a": 1.0 },
-    "fog2": { "sigma_s": 4.0, "sigma_a": 2.0 }
   },
   "bsdfs": {
-    "shell": { "kind": "MediumShell" }
+    "green-diffuse": { "kind": "Diffuse", "color": [0.14, 0.45, 0.091] },
+    "red-diffuse": { "kind": "Diffuse", "color": [0.63, 0.065, 0.05] },
+    "grey-diffuse": { "kind": "Diffuse", "color": [0.725, 0.71, 0.68] }
+
   },
   "instances": {
-    "tallBox": { "bsdf": "shell", "medium_in": "fog", "medium_out": "vacuum" },
-    "shortBox": { "bsdf": "shell", "medium_in": "fog2", "medium_out": "vacuum" }
-
+    "leftWall": { "bsdf": "red-diffuse" } , 
+    "rightWall": { "bsdf": "green-diffuse" } , 
+    "floor": { "bsdf": "grey-diffuse" } , 
+    "ceiling": { "bsdf": "grey-diffuse" } , 
+    "backWall": { "bsdf": "grey-diffuse" } , 
+    "tallBox": { "bsdf": "grey-diffuse" } , 
+    "shortBox": { "bsdf": "grey-diffuse" }
   }
 }

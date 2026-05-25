@@ -81,6 +81,15 @@ void DebugUi::drawGeometryPanel() {
     }
 }
 
+void DebugUi::drawSplatPanel() {
+    if (!ImGui::CollapsingHeader("Splat Pass")) return;
+    ImGui::Checkbox("Show splat", &state_.showSplat);
+    if (!state_.showSplat) return;
+    ImGui::TextDisabled("Requires geometry pass to populate depth buffer.");
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SliderFloat("h (bandwidth)", &state_.splatH, 0.001f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+}
+
 void DebugUi::drawPhotonPointPanel(uint32_t max_bounce) {
     if (!ImGui::CollapsingHeader("Photon Points")) return;
 
@@ -203,6 +212,7 @@ bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
     ImGui::Separator();
 
     drawGeometryPanel();
+    drawSplatPanel();
     drawPhotonPointPanel(max_bounce);
     drawPhotonBeamPanel(beam_max_bounce);
 

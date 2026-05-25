@@ -70,7 +70,7 @@ TEST_CASE("PhotonTracer: stored PhotonPoint.bsdf_id comes from Scene assignment"
     PhotonTracer tracer{scene, bvh, light};
     Rng rng{0xC0FFEEu};
 
-    tracer.trace(10000, /*max_depth=*/1, rng);
+    tracer.trace(10000, /*max_depth=*/2, rng);
     REQUIRE(!tracer.points().empty());
     for (const auto& p : tracer.points()) {
         REQUIRE(p.bsdf_id == kAssignedBsdf);

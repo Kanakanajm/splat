@@ -105,13 +105,15 @@ int main(int argc, char **argv) {
 
   // --- Photon scene setup ---------------------------------------------------
   if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <scene.obj>\n";
+    std::cerr << "Usage: " << argv[0] << " <scene.obj> [photon_count]\n";
     glfwDestroyWindow(window);
     glfwTerminate();
     return -1;
   }
 
   const std::string scenePath(argv[1]);
+  const uint32_t photonCount = argc >= 3 ? static_cast<uint32_t>(std::stoul(argv[2])) : 30000u;
+
   RayModel rayModel(scenePath);
   std::cout << "Scene: " << scenePath << " (" << rayModel.instance_count() << " instances)\n";
 
@@ -123,16 +125,18 @@ int main(int argc, char **argv) {
 
   PhotonTracer tracer(scene, bvh, light);
   Rng rng(0xDECAFu);
-  tracer.trace(/*photon_count=*/30000u, /*max_depth=*/64u, rng);
+  tracer.trace(photonCount, /*max_depth=*/64u, rng);
   scene.upload_geometry();
   scene.upload_points(tracer.points());
   scene.upload_beams(tracer.beams());
+  scene.upload_splats(tracer.points());
   std::cout << "Traced " << tracer.points().size() << " points, " << tracer.beams().size()
             << " beams" << std::endl;
 
   Shader pointShader("shaders/point.vs", "shaders/point.fs");
   Shader beamShader ("shaders/beam.vs",  "shaders/beam.fs");
   Shader geomShader ("shaders/geom.vs",  "shaders/geom.fs");
+  Shader splatShader("shaders/splat.vs", "shaders/splat.gs", "shaders/splat.fs");
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
@@ -179,6 +183,20 @@ int main(int argc, char **argv) {
       geomShader.setFloat("nearPlane", 0.1f);
       geomShader.setFloat("farPlane", 10.0f);
       scene.draw_geometry(geomShader, geomAov, vs.instanceVisible);
+    }
+
+    // --- Depth prepass (when geometry is hidden but splat needs a filled depth buffer)
+    if (vs.showSplat && !vs.showGeometry) {
+      glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+      setCameraUniforms(geomShader, projection, view);
+      scene.draw_geometry(geomShader, /*aov_mode=*/1, vs.instanceVisible);
+      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    }
+
+    // --- Splat pass (after geometry so depth buffer is populated)
+    if (vs.showSplat) {
+      setCameraUniforms(splatShader, projection, view);
+      scene.draw_splats(splatShader, vs.splatH);
     }
 
     // --- Photon point pass
