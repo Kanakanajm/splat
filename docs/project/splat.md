@@ -9,10 +9,9 @@ At the fragment shader, we evaluate the equation `k_r(u_t) * scattering_coeffici
 
 The depth test is disabled and blending is used to accumulate the radiance.
 
-The camera-side transmittance is calculated with depth-peeling for now on branch `depth-peel`. It is not directly usable since the `main.cpp` there is to test things out.
+The camera-side transmittance is calculated with depth-peeling for now on branch `depthpeel`. It is not directly usable since the `main.cpp` there is to test things out.
 
 # TODOs
-1. Organize `depth-peel` branch to export the functionality related to transmittance map which will be uploaded as a depth texture array and medium texture array. The evaluation details please refer to `docs/project/opacity.md`
-2. Merge `depth-peel` branch
+1. Organize `depthpeel` branch to export the functionality related to transmittance map which will be uploaded as a depth texture array and medium texture array. The evaluation details please refer to `docs/project/opacity.md`
 3. Construct camera-aligned billboard in a geometry shader
 4. Finish off the rendering pipeline with the final radiance estimate.
