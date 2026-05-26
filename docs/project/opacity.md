@@ -14,3 +14,8 @@ An alternative is to use depth-peeled layer to record medium interaction events 
 2. Repeat Step 1 until there is only background left (no more fragment to render, every layer peeled).
 
 Comparing to the plane cutting method where vertices are dropped during the clipping phase, the depth peeling method has to rasterize all vertices and discard fragments instead which I assume to be more costly.
+
+
+# About branch `depthpeel`
+It is not agent friendly so we will treat it as a code inventory where we extract necessary codes in (`/home/jackie/Desktop/master_thesis/splat-opa`, it is already in `depthpeel` branch)
+In `main.cpp` it renders three cubes encapsulated within each other. It has two shader objects (both contain their own vertex and fragment shader implementation). The `depthPeelShader` is responsible to iteratively calculate the depth peeled layer depth texture array and also the current medium texture array (the medium the fragment is currently entering). After the depth peel pass, `ourShader` uses the two texture arrays to calculate the transmittance of a plane that can be moved around and crossed (intersected with) the cubes. Since the fragment depth is not linear, it is necessary to remap the fragment coordinates to world and calculate all distance in world coordinate for attenuation, but I believe more efficient method exists. 
