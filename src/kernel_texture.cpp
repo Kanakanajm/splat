@@ -16,7 +16,7 @@ std::vector<float> build_kernel_texture(int size) {
             const float dv = v - 0.5f;
             const float r  = 2.0f * std::sqrt(du * du + dv * dv);
             if (r < 1.0f)
-                data[static_cast<size_t>(row * size + col)] = kPeak * (1.0f - r * r);
+                data[static_cast<size_t>(row * size + col)] = (1.0f - r * r); // match lightwave PhotonIntegrator
         }
     }
     return data;

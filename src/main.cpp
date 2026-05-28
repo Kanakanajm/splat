@@ -65,6 +65,7 @@ int main(int argc, char **argv) {
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_STENCIL_BITS, 8);
 
   GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT,
                                         "Photon Splatter", nullptr, nullptr);
@@ -133,10 +134,60 @@ int main(int argc, char **argv) {
   std::cout << "Traced " << tracer.points().size() << " points, " << tracer.beams().size()
             << " beams" << std::endl;
 
-  Shader pointShader("shaders/point.vs", "shaders/point.fs");
-  Shader beamShader ("shaders/beam.vs",  "shaders/beam.fs");
-  Shader geomShader ("shaders/geom.vs",  "shaders/geom.fs");
-  Shader splatShader("shaders/splat.vs", "shaders/splat.gs", "shaders/splat.fs");
+  Shader pointShader ("shaders/point.vs",  "shaders/point.fs");
+  Shader beamShader  ("shaders/beam.vs",   "shaders/beam.fs");
+  Shader geomShader  ("shaders/geom.vs",   "shaders/geom.fs");
+  Shader splatShader ("shaders/splat.vs",  "shaders/splat.gs", "shaders/splat.fs");
+  Shader shadowShader("shaders/shadow.vs", "shaders/shadow.gs", "shaders/shadow.fs");
+
+  // --- Point light shadow map (depth cubemap, rendered once since scene is static) ---
+  const int   SHADOW_RES = 1024;
+  const float SHADOW_FAR = 25.0f;
+  unsigned int shadowFBO = 0, depthCubemap = 0;
+  {
+    glGenTextures(1, &depthCubemap);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubemap);
+    for (int i = 0; i < 6; ++i)
+      glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_DEPTH_COMPONENT,
+                   SHADOW_RES, SHADOW_RES, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    glGenFramebuffers(1, &shadowFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthCubemap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  }
+  {
+    const glm::vec3 lp(light.position.x, light.position.y, light.position.z);
+    const glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, SHADOW_FAR);
+    const glm::mat4 shadowMatrices[6] = {
+      shadowProj * glm::lookAt(lp, lp + glm::vec3( 1, 0, 0), glm::vec3(0,-1, 0)),
+      shadowProj * glm::lookAt(lp, lp + glm::vec3(-1, 0, 0), glm::vec3(0,-1, 0)),
+      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0, 1, 0), glm::vec3(0, 0, 1)),
+      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0,-1, 0), glm::vec3(0, 0,-1)),
+      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0, 0, 1), glm::vec3(0,-1, 0)),
+      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0, 0,-1), glm::vec3(0,-1, 0)),
+    };
+
+    glViewport(0, 0, SHADOW_RES, SHADOW_RES);
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    shadowShader.use();
+    for (int i = 0; i < 6; ++i)
+      shadowShader.setMat4("shadowMatrices[" + std::to_string(i) + "]", shadowMatrices[i]);
+    shadowShader.setVec3("lightPos", light.position.x, light.position.y, light.position.z);
+    shadowShader.setFloat("farPlane", SHADOW_FAR);
+    shadowShader.setMat4("model", glm::mat4(1.0f));
+    scene.draw_geometry(shadowShader, /*aov_mode=*/1, {});
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, framebufferWidth, framebufferHeight);
+  }
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
@@ -171,7 +222,7 @@ int main(int argc, char **argv) {
     glClearColor(depthMode ? 1.0f : 0.05f,
                  depthMode ? 1.0f : 0.05f,
                  depthMode ? 1.0f : 0.08f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     // --- Geometry pass
     if (vs.showGeometry) {
@@ -182,6 +233,11 @@ int main(int argc, char **argv) {
       geomShader.setVec3("lightPos", light.position.x, light.position.y, light.position.z);
       geomShader.setFloat("nearPlane", 0.1f);
       geomShader.setFloat("farPlane", 10.0f);
+      geomShader.setInt("shadowMap", 1);
+      geomShader.setFloat("shadowFarPlane", SHADOW_FAR);
+      geomShader.setBool("useShadow", vs.useShadow);
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubemap);
       scene.draw_geometry(geomShader, geomAov, vs.instanceVisible);
     }
 
@@ -196,7 +252,7 @@ int main(int argc, char **argv) {
     // --- Splat pass (after geometry so depth buffer is populated)
     if (vs.showSplat) {
       setCameraUniforms(splatShader, projection, view);
-      scene.draw_splats(splatShader, vs.splatH);
+      scene.draw_splats(splatShader, vs.splatH, vs.exposure, static_cast<int>(vs.splatAov));
     }
 
     // --- Photon point pass

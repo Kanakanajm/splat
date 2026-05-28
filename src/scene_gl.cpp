@@ -380,30 +380,66 @@ unsigned int upload_kernel_tex() {
 }  // namespace (splat helpers)
 
 void Scene::upload_splats(const std::vector<PhotonPoint>& points) {
-    const auto data = encode_splats(points, bsdf_table_);
-    splat_vertex_count_ = static_cast<uint32_t>(data.size() / 15);
-    upload_splats_vbo(splats_vao_, splats_vbo_, data);
+    // Group photons by instance so per-instance draw ranges are contiguous.
+    const uint32_t n_inst = static_cast<uint32_t>(geom_ranges_.size());
+    std::vector<std::vector<float>> inst_data(n_inst);
+    for (const auto& p : points) {
+        const uint32_t iid = (p.instance_id < n_inst) ? p.instance_id : 0u;
+        auto& d = inst_data[iid];
+        const auto& col = bsdf_table_[p.bsdf_id < bsdf_table_.size() ? p.bsdf_id : 0].color;
+        d.push_back(p.position.x);     d.push_back(p.position.y);     d.push_back(p.position.z);
+        d.push_back(p.normal.x);       d.push_back(p.normal.y);       d.push_back(p.normal.z);
+        d.push_back(p.incoming_dir.x); d.push_back(p.incoming_dir.y); d.push_back(p.incoming_dir.z);
+        d.push_back(p.power.x);        d.push_back(p.power.y);        d.push_back(p.power.z);
+        d.push_back(col.x);            d.push_back(col.y);            d.push_back(col.z);
+    }
+
+    std::vector<float> flat;
+    flat.reserve(points.size() * 15);
+    splat_ranges_.resize(n_inst);
+    uint32_t cursor = 0;
+    for (uint32_t i = 0; i < n_inst; ++i) {
+        const uint32_t count = static_cast<uint32_t>(inst_data[i].size() / 15);
+        splat_ranges_[i] = {cursor, count};
+        flat.insert(flat.end(), inst_data[i].begin(), inst_data[i].end());
+        cursor += count;
+    }
+    splat_vertex_count_ = cursor;
+    upload_splats_vbo(splats_vao_, splats_vbo_, flat);
     if (splat_kernel_tex_ == 0)
         splat_kernel_tex_ = upload_kernel_tex();
 }
 
-void Scene::draw_splats(Shader& shader, float h) {
+void Scene::draw_splats(Shader& splat_shader, float h, float exposure, int aov_mode) {
     if (splats_vao_ == 0 || splat_vertex_count_ == 0) return;
 
-    shader.use();
-    shader.setFloat("h", h);
-    shader.setInt("kernelTex", 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, splat_kernel_tex_);
+    const bool debugAov = (aov_mode != 0);
 
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
+    glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(-1.0f, -1.0f);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_ONE, GL_ONE);
-    glDepthMask(GL_FALSE);
+
+    if (debugAov) {
+        // Debug AOVs: opaque, depth-writing, no additive blend.
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        if (aov_mode == 1)  // Wireframe
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    } else {
+        // Radiance: additive blend, no depth write.
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);
+        glDepthMask(GL_FALSE);
+    }
+
+    splat_shader.use();
+    splat_shader.setFloat("h", h);
+    splat_shader.setFloat("exposure", exposure);
+    splat_shader.setInt("aov_mode", aov_mode);
+    splat_shader.setInt("kernelTex", 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, splat_kernel_tex_);
 
     glBindVertexArray(splats_vao_);
     glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(splat_vertex_count_));
@@ -411,8 +447,8 @@ void Scene::draw_splats(Shader& shader, float h) {
 
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glDisable(GL_POLYGON_OFFSET_FILL);
     glDepthFunc(GL_LESS);
-    glDisable(GL_CULL_FACE);
     glBindTexture(GL_TEXTURE_2D, 0);
 }

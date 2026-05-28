@@ -9,11 +9,12 @@ struct GLFWwindow;
 struct ViewState {
     // --- Geometry ------------------------------------------------------------
     bool showGeometry = false;
+    bool useShadow    = true;
     enum class GeomAov : int { None, Diffuse, Normal, Depth, Backface } geomAov = GeomAov::None;
     std::vector<bool> instanceVisible;  // per-instance; empty = all visible
 
     // --- Photon Points -------------------------------------------------------
-    bool showPoints = true;
+    bool showPoints = false;
     enum class PointAov : int { InstanceId, BsdfKind, BounceDepth,
                                PowerColor, PowerLuminance, PowerNormalized } pointAov = PointAov::InstanceId;
     std::vector<bool> instancePointsVisible;  // per-instance; empty = all visible
@@ -25,11 +26,13 @@ struct ViewState {
     bool  has_pick = false;
 
     // --- Splat pass ----------------------------------------------------------
-    bool  showSplat = false;
-    float splatH    = 0.1f;
+    bool  showSplat  = true;
+    float splatH     = 0.01f;
+    float exposure   = 1.0f;
+    enum class SplatAov : int { Radiance, Wireframe, Normal } splatAov = SplatAov::Radiance;
 
     // --- Photon Beams --------------------------------------------------------
-    bool showBeams = true;
+    bool showBeams = false;
     enum class BeamAov : int { MediumId, T, BounceDepth, Length,
                                BeamPowerStart, BeamTransmittancePreview } beamAov = BeamAov::MediumId;
     std::vector<bool> mediumBeamsVisible;  // per-medium; empty = all visible

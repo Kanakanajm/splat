@@ -58,9 +58,9 @@ public:
                     int bounce_filter = -1);
 
     // Splat pass: kernel-weighted surface photon splatting (indirect, bounce_depth >= 1).
-    // Camera uniforms (model/view/projection) must be set on shader before calling draw_splats.
+    // Camera uniforms must be set on splat_shader before calling draw_splats.
     void upload_splats(const std::vector<PhotonPoint>& points);
-    void draw_splats(Shader& shader, float h);
+    void draw_splats(Shader& splat_shader, float h, float exposure = 1.0f, int aov_mode = 0);
 
 private:
     const RayModel&       model_;
@@ -101,4 +101,5 @@ private:
     unsigned int splats_vbo_         = 0;
     uint32_t     splat_vertex_count_ = 0;
     unsigned int splat_kernel_tex_   = 0;
+    std::vector<InstanceRange> splat_ranges_;  // one per instance, into splats VBO
 };

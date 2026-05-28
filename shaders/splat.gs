@@ -16,6 +16,7 @@ out vec2  vUV;
 out vec3  vPower;
 out vec3  vBsdfColor;
 out float vCosTheta;
+out vec3  vNormal;
 
 void main() {
     vec3 worldPos = gl_in[0].gl_Position.xyz;
@@ -54,6 +55,7 @@ void main() {
         vPower     = vsPower[0];
         vBsdfColor = vsBsdfColor[0];
         vCosTheta  = cosTheta;
+        vNormal    = n;
         EmitVertex();
     }
     EndPrimitive();
