@@ -32,14 +32,12 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
     constexpr float kEps = 1e-4f;  // ray-origin offset to escape the interaction point
 
     const float n = static_cast<float>(photon_count);
-    const tinybvh::bvhvec3 init_weight{light_.power.x / n,
-                                       light_.power.y / n,
-                                       light_.power.z / n};
+    const tinybvh::bvhvec3 init_weight = light_.power;
 
     for (uint32_t i = 0; i < photon_count; ++i) {
         tinybvh::Ray     ray    = light_.emit_ray(rng);
-        uint32_t         m      = light_.medium_id;
-        tinybvh::bvhvec3 weight = init_weight;
+        uint32_t         m      = light_.medium_id; // current medium
+        tinybvh::bvhvec3 weight = init_weight; // current weight
 
         for (uint32_t depth = 0; depth < max_depth; ++depth) {
             bvh_.Intersect(ray);
@@ -88,7 +86,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
             const uint32_t bsdf_id = scene_.bsdf_id_at(prim);
             const Bsdf&    bsdf    = scene_.bsdf(bsdf_id);
             if (bsdf.kind == BsdfKind::Diffuse) {
-                points_.push_back({p, bsdf_id, scene_.model().instance_id(prim), depth, weight});
+                points_.push_back({p, bsdf_id, scene_.model().instance_id(prim), depth, weight/photon_count});
             }
 
             // Russian roulette.
