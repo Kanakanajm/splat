@@ -97,8 +97,6 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
     const auto& l = doc["light"];
     cfg.light_pos_      = parse_vec3(l.at("position"));
     if (l.contains("power"))    cfg.light_power_    = parse_vec3(l["power"]);
-    if (l.contains("emit_dir")) cfg.light_emit_dir_ = parse_vec3(l["emit_dir"]);
-
     if (l.contains("medium")) {
         cfg.light_medium_ = l["medium"].get<std::string>();
         require_medium(cfg.light_medium_, "light");
@@ -149,5 +147,5 @@ PointLight SceneConfig::apply(Scene& scene) const {
     }
 
     const uint32_t light_mid = resolve_medium(light_medium_);
-    return PointLight{ light_pos_, light_power_, light_mid, light_emit_dir_ };
+    return PointLight{ light_pos_, light_power_, light_mid };
 }
