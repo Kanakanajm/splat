@@ -4,6 +4,8 @@
 
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <iostream>
+#include <iomanip>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
@@ -44,6 +46,7 @@ bool DebugUi::wantsMouse()    const { return ImGui::GetIO().WantCaptureMouse; }
 bool DebugUi::wantsKeyboard() const { return ImGui::GetIO().WantCaptureKeyboard; }
 
 void DebugUi::pick(float r, float g, float b) {
+    std::cout << std::setprecision(8) << "Color of Picked Pixel: " << r << ", " << g << ", " << b << std::endl;
     state_.pick_r = r; state_.pick_g = g; state_.pick_b = b;
     state_.has_pick = true;
 }
