@@ -37,7 +37,7 @@ bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled, float &clipNear,
                    int &selectedPeelLayer, int generatedLayerCount,
                    int &aovDisplayMode,
                    glm::vec3 &planeNormal, float &planeOffset,
-                   float &planeScale, int &transVizMode) {
+                   float &planeScale, int &transVizMode, int &transTestCase) {
   if (showDemoWindow)
     ImGui::ShowDemoWindow(&showDemoWindow);
 
@@ -92,6 +92,16 @@ bool DebugUi::draw(const Camera &camera, bool &vsyncEnabled, float &clipNear,
     }
   } else {
     // ---- Transmittance ----
+    const char *testCaseNames[] = {
+        "Encapsulated (3 nested)",
+        "Separate (3 in a line)",
+        "2 encapsulated + 1 behind",
+        "Encapsulated (reversed IDs)",
+        "2 encapsulated",
+
+    };
+    ImGui::Combo("Test case", &transTestCase, testCaseNames, IM_ARRAYSIZE(testCaseNames));
+    ImGui::Separator();
     ImGui::SliderFloat3("Plane normal", &planeNormal.x, -1.0f,  1.0f);
     ImGui::SliderFloat("Plane offset",  &planeOffset,  -20.0f, 20.0f);
     ImGui::SliderFloat("Plane scale",   &planeScale,    0.1f,  20.0f);

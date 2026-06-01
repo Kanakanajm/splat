@@ -20,7 +20,7 @@ public:
             float &clipFar, int &appMode,
             int &selectedPeelLayer, int generatedLayerCount, int &aovDisplayMode,
             glm::vec3 &planeNormal, float &planeOffset, float &planeScale,
-            int &transVizMode);
+            int &transVizMode, int &transTestCase);
 
   void endFrame();
 

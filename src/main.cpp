@@ -14,17 +14,22 @@
 #include "framebuffer.hpp"
 #include "stb_image.h"
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <vector>
+
+struct CubeInstance {
+  glm::mat4 transform;
+  int mediumId;
+};
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard);
-void drawThreeCubes(Shader &shader, unsigned int VAO,
-                    const std::array<int, 3> &mediumIds);
+void drawCubes(Shader &shader, unsigned int VAO,
+               const std::vector<CubeInstance> &cubes);
 void drawPlane(Shader &shader, unsigned int VAO);
 glm::mat4 makePlaneModel(const glm::vec3 &normal, float offset, float scale);
 void setMouseLook(GLFWwindow *window, bool enabled);
@@ -92,18 +97,6 @@ float vertices[] = {
     -0.5f, 0.5f,  0.5f,  0.0f, 0.0f
     };
 
-glm::vec3 cubePositions[] = {
-    glm::vec3(0.0f, 0.0f, 0.0f),    glm::vec3(2.0f, 5.0f, -15.0f),
-    glm::vec3(-1.5f, -2.2f, -2.5f), glm::vec3(-3.8f, -2.0f, -12.3f),
-    glm::vec3(2.4f, -0.4f, -3.5f),  glm::vec3(-1.7f, 3.0f, -7.5f),
-    glm::vec3(1.3f, -2.0f, -2.5f),  glm::vec3(1.5f, 2.0f, -2.5f),
-    glm::vec3(1.5f, 0.2f, -1.5f),   glm::vec3(-1.3f, 1.0f, -1.5f)};
-
-struct HomogeneousMedium {
-  int id;
-  float attenuationCoefficient;
-};
-
 float screenQuadVertices[] = {
     // positions   // tex coords
     -1.0f, 1.0f, 0.0f, 1.0f, -1.0f, -1.0f, 0.0f, 0.0f, 1.0f, -1.0f, 1.0f, 0.0f,
@@ -155,18 +148,42 @@ int main() {
   int appMode = 0;        // 0 = AOV   1 = Transmittance
   int aovDisplayMode = 0; // 0 = Color  1 = Depth  2 = Medium
   int transVizMode = 0;   // 0 = Transmittance  1 = World Depth  2 = Media Count
+  int transTestCase = 0;  // 0..3, see cubeTestCases below
   glm::vec3 planeNormal(0.0f, 0.0f, 1.0f);
   float planeOffset = -5.0f;
   float planeScale = 10.0f;
-  const std::array<HomogeneousMedium, 3> cubeMedia = {
-      HomogeneousMedium{3, 0.25f},
-      HomogeneousMedium{2, 0.6f},
-      HomogeneousMedium{1, 1.0f},
-  };
-  const std::array<int, 3> cubeMediumIds = {
-      cubeMedia[0].id,
-      cubeMedia[1].id,
-      cubeMedia[2].id,
+
+  const std::vector<std::vector<CubeInstance>> cubeTestCases = {
+      // 0: Three fully encapsulated (concentric) cubes
+      {
+          {glm::scale(glm::mat4(1.0f), glm::vec3(10.0f)), 3},
+          {glm::scale(glm::mat4(1.0f), glm::vec3(5.0f)),  2},
+          {glm::scale(glm::mat4(1.0f), glm::vec3(2.0f)),  1},
+      },
+      // 1: Three separate cubes in a line along X (no overlap)
+      {
+          {glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.0f, 0.0f)), glm::vec3(2.5f)), 1},
+          {glm::scale(glm::mat4(1.0f), glm::vec3(2.5f)), 2},
+          {glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3( 4.0f, 0.0f, 0.0f)), glm::vec3(2.5f)), 3},
+      },
+      // 2: Two encapsulated cubes + one separate cube behind them
+      {
+          {glm::scale(glm::mat4(1.0f), glm::vec3(5.0f)),  2},
+          {glm::scale(glm::mat4(1.0f), glm::vec3(2.0f)),  1},
+          {glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -8.0f)), glm::vec3(2.0f)), 3},
+      },
+      // 3: Three fully encapsulated cubes with medium IDs in reverse order
+      {
+          {glm::scale(glm::mat4(1.0f), glm::vec3(10.0f)), 1},
+          {glm::scale(glm::mat4(1.0f), glm::vec3(5.0f)),  2},
+          {glm::scale(glm::mat4(1.0f), glm::vec3(2.0f)),  3},
+      },
+      // 4: Two cube encapsulated only, like case 2
+      {
+          {glm::scale(glm::mat4(1.0f), glm::vec3(5.0f)),  2},
+          {glm::scale(glm::mat4(1.0f), glm::vec3(2.0f)),  1},
+      },
+      
   };
 
   glfwSwapInterval(vsyncEnabled ? 1 : 0);
@@ -374,10 +391,12 @@ int main() {
     int mediumClearColor[4] = {0, 0, 0, 0};
     glClearBufferiv(GL_COLOR, 1, mediumClearColor);
 
+    const auto &cubes = cubeTestCases[transTestCase];
+
     ourShader.use();
     ourShader.setMat4("projection", projection);
     ourShader.setMat4("view", view);
-    drawThreeCubes(ourShader, VAO, cubeMediumIds);
+    drawCubes(ourShader, VAO, cubes);
 
     generatedLayerCount = 1;
     for (int layer = 1; layer < maxPeelLayers; ++layer) {
@@ -393,7 +412,7 @@ int main() {
       depthPeelShader.setInt("previousLayerIdx", layer - 1);
 
       glBeginQuery(GL_ANY_SAMPLES_PASSED, peelQuery);
-      drawThreeCubes(depthPeelShader, VAO, cubeMediumIds);
+      drawCubes(depthPeelShader, VAO, cubes);
       glEndQuery(GL_ANY_SAMPLES_PASSED);
 
       unsigned int anySamplesPassed = GL_FALSE;
@@ -445,7 +464,7 @@ int main() {
       wireframeShader.setMat4("projection", projection);
       wireframeShader.setMat4("view", view);
       wireframeShader.setVec3("color", 1.0f, 0.0f, 0.0f);
-      drawThreeCubes(wireframeShader, VAO, cubeMediumIds);
+      drawCubes(wireframeShader, VAO, cubes);
       glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
       glEnable(GL_BLEND);
@@ -471,7 +490,7 @@ int main() {
 
     if (debugUi->draw(camera, vsyncEnabled, clipNear, clipFar,
                       appMode, selectedPeelLayer, generatedLayerCount, aovDisplayMode,
-                      planeNormal, planeOffset, planeScale, transVizMode)) {
+                      planeNormal, planeOffset, planeScale, transVizMode, transTestCase)) {
       glfwSwapInterval(vsyncEnabled ? 1 : 0);
     }
     debugUi->endFrame();
@@ -516,28 +535,14 @@ void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard) {
     camera.ProcessKeyboard(RIGHT, deltaTime);
 }
 
-void drawThreeCubes(Shader &shader, unsigned int VAO,
-                    const std::array<int, 3> &mediumIds) {
+void drawCubes(Shader &shader, unsigned int VAO,
+               const std::vector<CubeInstance> &cubes) {
   glBindVertexArray(VAO);
-
-  glm::mat4 model = glm::mat4(1.0f);
-  model = glm::scale(model, glm::vec3(10.0f));
-  shader.setMat4("model", model);
-  shader.setInt("mediumId", mediumIds[0]);
-  glDrawArrays(GL_TRIANGLES, 0, 36);
-
-  model = glm::mat4(1.0f);
-  model = glm::scale(model, glm::vec3(5.0f));
-  shader.setMat4("model", model);
-  shader.setInt("mediumId", mediumIds[1]);
-  glDrawArrays(GL_TRIANGLES, 0, 36);
-
-  model = glm::mat4(1.0f);
-  model = glm::scale(model, glm::vec3(2.0f));
-  shader.setMat4("model", model);
-  shader.setInt("mediumId", mediumIds[2]);
-  glDrawArrays(GL_TRIANGLES, 0, 36);
-
+  for (const auto &cube : cubes) {
+    shader.setMat4("model", cube.transform);
+    shader.setInt("mediumId", cube.mediumId);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+  }
   glBindVertexArray(0);
 }
 
