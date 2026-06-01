@@ -25,7 +25,7 @@ float attenuation(int id)
 
 vec3 reconstructWorldPos(float z) {
     // TODO: check if x,y in window space offset by 0.5?
-    vec2 ndc_xy = ((gl_FragCoord.xy - vec2(0.5)) / resolution) * 2.0 - 1.0;
+    vec2 ndc_xy = (gl_FragCoord.xy / resolution) * 2.0 - 1.0;
 
     float z_ndc = z * 2.0 - 1.0; // z range from 0 to 1
 
@@ -40,7 +40,7 @@ void main()
     int lastMediumId = -1;
     vec3 lastDepthWorld = cameraWorldPos;
     float transmittance = 1.0;
-    
+
     for (int i = 0; i < numLayers; ++i)
     {
         float depthValue = texelFetch(depthMap, ivec3(int(gl_FragCoord.x), int(gl_FragCoord.y), i), 0).r;
