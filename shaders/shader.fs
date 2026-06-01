@@ -8,11 +8,17 @@ uniform sampler2D texture1;
 uniform sampler2D texture2;
 uniform int mediumId;
 
+#include "medium_stack.glsl"
+
 void main() {
     FragColor = mix(texture(texture1, TexCoord), texture(texture2, TexCoord), 0.2);
 
-    uint bit      = 1u << mediumId;
-    // assuming the camera is always in vacuum, it will only see front faces.
-    // TODO: handle camera medium properly
-    FragMediumId = bit;
+    // Layer 0: ray starts in vacuum.  Push mediumId on entry (front face).
+    // TODO: handle camera-inside-medium by pre-pushing on back face.
+    uint stack = 0u;
+    int  top   = 0;
+    if (gl_FrontFacing) {
+        stack_push(stack, top, uint(mediumId));
+    }
+    FragMediumId = stack_pack(stack, top);
 }

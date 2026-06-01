@@ -2,9 +2,55 @@
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <sstream>
+
+// Recursively replace #include "file" directives with the referenced file's
+// contents.  'dir' is the directory of the file currently being processed so
+// that relative paths resolve correctly.  'visited' prevents the same file
+// from being inlined more than once (guards against circular includes).
+static std::string resolveIncludes(const std::string &source,
+                                   const std::filesystem::path &dir,
+                                   std::set<std::string> &visited) {
+    std::istringstream in(source);
+    std::ostringstream out;
+    std::string line;
+    while (std::getline(in, line)) {
+        const size_t incPos = line.find("#include");
+        if (incPos != std::string::npos) {
+            const size_t q1 = line.find('"', incPos);
+            const size_t q2 = (q1 != std::string::npos)
+                                   ? line.find('"', q1 + 1)
+                                   : std::string::npos;
+            if (q1 != std::string::npos && q2 != std::string::npos) {
+                const std::string filename = line.substr(q1 + 1, q2 - q1 - 1);
+                const std::filesystem::path inclPath = dir / filename;
+                const std::string key = inclPath.lexically_normal().string();
+
+                if (visited.insert(key).second) {
+                    // First time seeing this file — inline it
+                    std::ifstream f(inclPath);
+                    if (f) {
+                        std::ostringstream ss;
+                        ss << f.rdbuf();
+                        out << resolveIncludes(ss.str(),
+                                               inclPath.parent_path(), visited);
+                    } else {
+                        std::cerr << "ERROR::SHADER::INCLUDE_NOT_FOUND: "
+                                  << key << '\n';
+                    }
+                }
+                // Either way, consume the #include line itself
+                continue;
+            }
+        }
+        out << line << '\n';
+    }
+    return out.str();
+}
 
 Shader::Shader(const char *vertexPath, const char *fragmentPath) {
   this->vertexPath = vertexPath;
@@ -24,12 +70,15 @@ Shader::Shader(const char *vertexPath, const char *fragmentPath) {
     // read file's buffer contents into streams
     vShaderStream << vShaderFile.rdbuf();
     fShaderStream << fShaderFile.rdbuf();
-    // close file handlers
     vShaderFile.close();
     fShaderFile.close();
-    // convert stream into string
-    vertexCode = vShaderStream.str();
-    fragmentCode = fShaderStream.str();
+    std::set<std::string> vVisited, fVisited;
+    vertexCode   = resolveIncludes(vShaderStream.str(),
+                                   std::filesystem::path(vertexPath).parent_path(),
+                                   vVisited);
+    fragmentCode = resolveIncludes(fShaderStream.str(),
+                                   std::filesystem::path(fragmentPath).parent_path(),
+                                   fVisited);
   } catch (std::ifstream::failure &e) {
     std::cout << "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ: " << e.what()
               << std::endl;

@@ -1,5 +1,4 @@
 #version 330 core
-#extension GL_ARB_gpu_shader5 : enable
 
 out vec4 FragColor;
 
@@ -14,6 +13,8 @@ uniform vec3 cameraWorldPos;
 
 // 0 = transmittance   1 = world depth from camera   2 = media count
 uniform int vizMode;
+
+#include "medium_stack.glsl"
 
 float attenuation(int id)
 {
@@ -64,8 +65,13 @@ void main()
         transmittance *= exp(-attenuation(lastMediumId) * length(depthWorld - lastDepthWorld));
 
         lastDepthWorld = depthWorld;
-        uint mediumMask = texelFetch(mediumMap, ivec3(int(gl_FragCoord.x), int(gl_FragCoord.y), i), 0).r;
-        lastMediumId = findMSB(mediumMask);
+
+        uint encoded = texelFetch(mediumMap, ivec3(int(gl_FragCoord.x), int(gl_FragCoord.y), i), 0).r;
+        uint mstack;
+        int  mtop;
+        stack_unpack(encoded, mstack, mtop);
+        lastMediumId = stack_empty(mtop) ? -1 : int(stack_peek(mstack, mtop));
+
         count++;
     }
 
