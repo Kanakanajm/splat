@@ -32,3 +32,16 @@ target_include_directories(SplatApp PRIVATE
 )
 
 target_link_libraries(SplatApp PRIVATE glfw glm::glm)
+
+add_executable(TestReconstruct
+    src/test_reconstruct.cpp
+    src/shader.cpp
+    external/glad/src/glad.c
+)
+
+target_include_directories(TestReconstruct PRIVATE
+    include
+    external/glad/include
+)
+
+target_link_libraries(TestReconstruct PRIVATE glfw glm::glm)
