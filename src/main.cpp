@@ -18,7 +18,6 @@
 #include <cmath>
 #include <iostream>
 #include <memory>
-#include <vector>
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
@@ -28,7 +27,6 @@ void drawThreeCubes(Shader &shader, unsigned int VAO,
                     const std::array<int, 3> &mediumIds);
 void drawPlane(Shader &shader, unsigned int VAO);
 glm::mat4 makePlaneModel(const glm::vec3 &normal, float offset, float scale);
-// callback when mouseLookEnabled changes
 void setMouseLook(GLFWwindow *window, bool enabled);
 
 // settings
@@ -47,36 +45,36 @@ bool mouseLookEnabled = false;
 bool uiWantsMouse = false;
 
 // timing
-float deltaTime = 0.0f; // time between current frame and last frame
+float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
 float vertices[] = {
-    -0.5f, -0.5f, -0.5f, 0.0f, 0.0f, 
-    0.5f,  0.5f,  -0.5f, 1.0f, 1.0f, 
+    -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
+    0.5f,  0.5f,  -0.5f, 1.0f, 1.0f,
     0.5f,  -0.5f, -0.5f, 1.0f, 0.0f,
     0.5f,  0.5f,  -0.5f, 1.0f, 1.0f,
     -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
-    -0.5f, 0.5f,  -0.5f, 0.0f, 1.0f, 
+    -0.5f, 0.5f,  -0.5f, 0.0f, 1.0f,
 
-    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f, 
+    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f,
     0.5f,  -0.5f, 0.5f,  1.0f, 0.0f,
-    0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 
     0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
-    -0.5f, 0.5f,  0.5f,  0.0f, 1.0f, 
+    0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
+    -0.5f, 0.5f,  0.5f,  0.0f, 1.0f,
     -0.5f, -0.5f, 0.5f,  0.0f, 0.0f,
 
-    -0.5f, 0.5f,  0.5f,  1.0f, 0.0f, 
+    -0.5f, 0.5f,  0.5f,  1.0f, 0.0f,
     -0.5f, 0.5f,  -0.5f, 1.0f, 1.0f,
-    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 
     -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f, 
+    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
+    -0.5f, -0.5f, 0.5f,  0.0f, 0.0f,
     -0.5f, 0.5f,  0.5f,  1.0f, 0.0f,
 
-    0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 
-    0.5f,  -0.5f, -0.5f, 0.0f, 1.0f, 
+    0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+    0.5f,  -0.5f, -0.5f, 0.0f, 1.0f,
     0.5f,  0.5f,  -0.5f, 1.0f, 1.0f,
     0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
-    0.5f,  -0.5f, 0.5f,  0.0f, 0.0f, 
+    0.5f,  -0.5f, 0.5f,  0.0f, 0.0f,
     0.5f,  -0.5f, -0.5f, 0.0f, 1.0f,
 
     -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
@@ -86,7 +84,6 @@ float vertices[] = {
     -0.5f, -0.5f, 0.5f,  0.0f, 0.0f,
     -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
 
-    
     -0.5f, 0.5f,  -0.5f, 0.0f, 1.0f,
     0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
     0.5f,  0.5f,  -0.5f, 1.0f, 1.0f,
@@ -106,11 +103,6 @@ struct HomogeneousMedium {
   int id;
   float attenuationCoefficient;
 };
-
-// unsigned int indices[] = {
-//     0, 1, 3, // first triangle
-//     1, 2, 3  // second triangle
-// };
 
 float screenQuadVertices[] = {
     // positions   // tex coords
@@ -160,14 +152,16 @@ int main() {
   float clipFar = 50.0f;
   int selectedPeelLayer = 0;
   int generatedLayerCount = 1;
-  int displayMode = 0;
+  int appMode = 0;        // 0 = AOV   1 = Transmittance
+  int aovDisplayMode = 0; // 0 = Color  1 = Depth  2 = Medium
+  int transVizMode = 0;   // 0 = Transmittance  1 = World Depth  2 = Media Count
   glm::vec3 planeNormal(0.0f, 0.0f, 1.0f);
   float planeOffset = -5.0f;
   float planeScale = 10.0f;
   const std::array<HomogeneousMedium, 3> cubeMedia = {
-      HomogeneousMedium{1, 0.25f},
+      HomogeneousMedium{3, 0.25f},
       HomogeneousMedium{2, 0.6f},
-      HomogeneousMedium{3, 1.0f},
+      HomogeneousMedium{1, 1.0f},
   };
   const std::array<int, 3> cubeMediumIds = {
       cubeMedia[0].id,
@@ -184,8 +178,7 @@ int main() {
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
-  // texture array init
-  // 1. Create the Texture Arrays
+  // Texture arrays
   GLuint colorArray, depthArray, mediumArray;
   glGenTextures(1, &colorArray);
   glBindTexture(GL_TEXTURE_2D_ARRAY, colorArray);
@@ -211,7 +204,7 @@ int main() {
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-  // 2. Create Single FBO
+  // Peel FBO
   unsigned int peelQuery;
   glGenQueries(1, &peelQuery);
 
@@ -223,95 +216,68 @@ int main() {
   glDrawBuffers(2, peelAttachments);
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+  // Shaders
   Shader ourShader("shaders/shader.vs", "shaders/shader.fs");
   Shader depthPeelShader("shaders/shader.vs", "shaders/depth_peel.fs");
+  Shader aovColorShader("shaders/depth.vs", "shaders/aov_color.fs");
   Shader depthShader("shaders/depth.vs", "shaders/depth.fs");
   Shader mediumDebugShader("shaders/depth.vs", "shaders/medium_debug.fs");
   Shader flatColorShader("shaders/flat_color.vs", "shaders/flat_trans.fs");
   Shader wireframeShader("shaders/wireframe.vs", "shaders/wireframe.fs");
 
-  unsigned int screenQuadVAO;
-  unsigned int screenQuadVBO;
-
+  // Screen quad VAO
+  unsigned int screenQuadVAO, screenQuadVBO;
   glGenVertexArrays(1, &screenQuadVAO);
   glGenBuffers(1, &screenQuadVBO);
-
   glBindVertexArray(screenQuadVAO);
-
   glBindBuffer(GL_ARRAY_BUFFER, screenQuadVBO);
   glBufferData(GL_ARRAY_BUFFER, sizeof(screenQuadVertices), screenQuadVertices,
                GL_STATIC_DRAW);
-
-  // location 0: vec2 position
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
-
-  // location 1: vec2 tex coord
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
                         (void *)(2 * sizeof(float)));
   glEnableVertexAttribArray(1);
-
   glBindBuffer(GL_ARRAY_BUFFER, 0);
-
   glBindVertexArray(0);
 
-  unsigned int planeVAO;
-  unsigned int planeVBO;
-
+  // Plane VAO
+  unsigned int planeVAO, planeVBO;
   glGenVertexArrays(1, &planeVAO);
   glGenBuffers(1, &planeVBO);
-
   glBindVertexArray(planeVAO);
-
   glBindBuffer(GL_ARRAY_BUFFER, planeVBO);
   glBufferData(GL_ARRAY_BUFFER, sizeof(planeVertices), planeVertices,
                GL_STATIC_DRAW);
-
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
-
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
 
-  unsigned int VAO;
+  // Cube VAO
+  unsigned int VAO, VBO;
   glGenVertexArrays(1, &VAO);
   glBindVertexArray(VAO);
-
-  // unsigned int EBO;
-  // glGenBuffers(1, &EBO);
-  // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-  // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
-  // GL_STATIC_DRAW);
-
-  unsigned int VBO;
   glGenBuffers(1, &VBO);
   glBindBuffer(GL_ARRAY_BUFFER, VBO);
   glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float),
                         (void *)(3 * sizeof(float)));
   glEnableVertexAttribArray(1);
-
   glBindBuffer(GL_ARRAY_BUFFER, 0);
-
   glBindVertexArray(0);
 
-  // flip y for textures
   stbi_set_flip_vertically_on_load(true);
 
-  // texture1: container
   unsigned int texture1;
   glGenTextures(1, &texture1);
   glBindTexture(GL_TEXTURE_2D, texture1);
-  // set the texture wrapping/filtering options (on the currently bound texture
-  // object)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  // load and generate the texture
   int width, height, nrChannels;
   unsigned char *data = stbi_load("assets/textures/container.jpg", &width,
                                   &height, &nrChannels, 0);
@@ -320,21 +286,17 @@ int main() {
                  GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
   } else {
-    std::cout << "Failed to load texture1" << std::endl;
+    std::cout << "Failed to load texture1\n";
   }
   stbi_image_free(data);
 
-  // texture2: awesomeface
   unsigned int texture2;
   glGenTextures(1, &texture2);
   glBindTexture(GL_TEXTURE_2D, texture2);
-  // set the texture wrapping/filtering options (on the currently bound texture
-  // object)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  // load and generate the texture
   data = stbi_load("assets/textures/awesomeface.png", &width, &height,
                    &nrChannels, 0);
   if (data) {
@@ -342,7 +304,7 @@ int main() {
                  GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
   } else {
-    std::cout << "Failed to load texture2" << std::endl;
+    std::cout << "Failed to load texture2\n";
   }
   stbi_image_free(data);
 
@@ -354,24 +316,23 @@ int main() {
   depthPeelShader.setInt("texture1", 0);
   depthPeelShader.setInt("texture2", 1);
   depthPeelShader.setInt("previousDepths", 2);
-  depthPeelShader.setInt("previousMedia", 3);
+  depthPeelShader.setInt("previousMedia",  3);
   depthPeelShader.setFloat("peelEpsilon", 0.00001f);
 
+  // Permanent texture unit bindings:
+  //   0 = texture1 (container)
+  //   1 = texture2 (awesomeface)
+  //   2 = depthArray   — depth peel read + flat_trans
+  //   3 = mediumArray  — depth peel read + flat_trans
+  //   4 = colorArray   — AOV color display
+  glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, texture1);
+  glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, texture2);
+  glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D_ARRAY, depthArray);
+  glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D_ARRAY, mediumArray);
+  glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D_ARRAY, colorArray);
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, texture1);
-  glActiveTexture(GL_TEXTURE1);
-  glBindTexture(GL_TEXTURE_2D, texture2);
-  glActiveTexture(GL_TEXTURE2);
-  glBindTexture(GL_TEXTURE_2D_ARRAY, depthArray);
-  glActiveTexture(GL_TEXTURE3);
-  glBindTexture(GL_TEXTURE_2D_ARRAY, mediumArray);
-  glActiveTexture(GL_TEXTURE0);
-
-  // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-  // glPointSize(50.0f);
 
   lastFrame = glfwGetTime();
-  float modelRotationAngle = 0.0f;
 
   // MARK: R-LOOP
 
@@ -385,8 +346,6 @@ int main() {
     uiWantsMouse = debugUi->wantsMouse();
     const bool uiWantsKeyboard = debugUi->wantsKeyboard();
 
-    modelRotationAngle += glm::radians(40.0f) * deltaTime;
-
     processInput(window, uiWantsMouse, uiWantsKeyboard);
 
     glViewport(0, 0, framebufferWidth, framebufferHeight);
@@ -397,24 +356,20 @@ int main() {
                                   : 1.0f;
     glm::mat4 projection = glm::perspective(glm::radians(90.0f),
                                             aspectRatio, clipNear, clipFar);
-    glm::mat4 view = camera.GetViewMatrix();
-
+    glm::mat4 view       = camera.GetViewMatrix();
     glm::mat4 invViewProj = glm::inverse(projection * view);
-
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
 
-    // Layer 0 Pass
+    // ---- Depth peeling (feeds both modes) ----
+
     glBindFramebuffer(GL_FRAMEBUFFER, peelFBO);
 
-    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorArray,
-                              0, 0);
-    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthArray,
-                              0, 0);
-    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, mediumArray,
-                              0, 0);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorArray,  0, 0);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,  depthArray,  0, 0);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, mediumArray, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     int mediumClearColor[4] = {0, 0, 0, 0};
     glClearBufferiv(GL_COLOR, 1, mediumClearColor);
@@ -424,24 +379,18 @@ int main() {
     ourShader.setMat4("view", view);
     drawThreeCubes(ourShader, VAO, cubeMediumIds);
 
-    // Subsequent Peels
     generatedLayerCount = 1;
     for (int layer = 1; layer < maxPeelLayers; ++layer) {
-      // Attach CURRENT layer to WRITE to
-      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                colorArray, 0, layer);
-      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthArray,
-                                0, layer);
-      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
-                                mediumArray, 0, layer);
+      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorArray,  0, layer);
+      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,  depthArray,  0, layer);
+      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, mediumArray, 0, layer);
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       glClearBufferiv(GL_COLOR, 1, mediumClearColor);
 
       depthPeelShader.use();
       depthPeelShader.setMat4("projection", projection);
       depthPeelShader.setMat4("view", view);
-      depthPeelShader.setInt("previousLayerIdx",
-                             layer - 1); // Pass index to shader
+      depthPeelShader.setInt("previousLayerIdx", layer - 1);
 
       glBeginQuery(GL_ANY_SAMPLES_PASSED, peelQuery);
       drawThreeCubes(depthPeelShader, VAO, cubeMediumIds);
@@ -449,173 +398,80 @@ int main() {
 
       unsigned int anySamplesPassed = GL_FALSE;
       glGetQueryObjectuiv(peelQuery, GL_QUERY_RESULT, &anySamplesPassed);
-      if (anySamplesPassed == GL_FALSE) {
+      if (anySamplesPassed == GL_FALSE)
         break;
-      }
 
       generatedLayerCount = layer + 1;
     }
 
-    // // Layer 0: render the closest visible layer.
-    // peelLayers[0].bind();
-    // peelLayers[0].clear(0.2f, 0.3f, 0.3f, 1.0f);
+    // ---- Display ----
 
-    // glActiveTexture(GL_TEXTURE0);
-    // glBindTexture(GL_TEXTURE_2D, texture1);
-    // glActiveTexture(GL_TEXTURE1);
-    // glBindTexture(GL_TEXTURE_2D, texture2);
-
-    // ourShader.use();
-    // ourShader.setMat4("projection", projection);
-    // ourShader.setMat4("view", view);
-    // drawThreeCubes(ourShader, VAO, cubeMediumIds);
-
-    // generatedLayerCount = 1;
-    // for (int layer = 1; layer < maxPeelLayers; ++layer) {
-    //   peelLayers[layer].bind();
-    //   peelLayers[layer].clear(0.2f, 0.3f, 0.3f, 1.0f);
-
-    //   glActiveTexture(GL_TEXTURE0);
-    //   glBindTexture(GL_TEXTURE_2D, texture1);
-    //   glActiveTexture(GL_TEXTURE1);
-    //   glBindTexture(GL_TEXTURE_2D, texture2);
-    //   glActiveTexture(GL_TEXTURE2);
-    //   glBindTexture(GL_TEXTURE_2D, peelLayers[layer - 1].depthTexture());
-
-    //   depthPeelShader.use();
-    //   depthPeelShader.setFloat("peelEpsilon", 0.00001f);
-    //   depthPeelShader.setMat4("projection", projection);
-    //   depthPeelShader.setMat4("view", view);
-
-    //   glBeginQuery(GL_ANY_SAMPLES_PASSED, peelQuery);
-    //   drawThreeCubes(depthPeelShader, VAO, cubeMediumIds);
-    //   glEndQuery(GL_ANY_SAMPLES_PASSED);
-
-    //   unsigned int anySamplesPassed = GL_FALSE;
-    //   glGetQueryObjectuiv(peelQuery, GL_QUERY_RESULT, &anySamplesPassed);
-    //   if (anySamplesPassed == GL_FALSE) {
-    //     break;
-    //   }
-
-    //   generatedLayerCount = layer + 1;
-    // }
-
-    // show wireframe
+    selectedPeelLayer = std::clamp(selectedPeelLayer, 0, generatedLayerCount - 1);
 
     Framebuffer::bindDefault();
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    wireframeShader.use();
-    wireframeShader.setMat4("projection", projection);
-    wireframeShader.setMat4("view", view);
-    wireframeShader.setVec3("color", 1.0f, 0.0f, 0.0f);
-    drawThreeCubes(wireframeShader, VAO, cubeMediumIds);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-    // blend a rectangle
-    glClear(GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
-    flatColorShader.use();
-    flatColorShader.setInt("depthMap", 2);
-    flatColorShader.setInt("mediumMap", 3);
-    flatColorShader.setInt("numLayers", generatedLayerCount);
-    flatColorShader.setMat4("projection", projection);
-    flatColorShader.setMat4("view", view);
-    flatColorShader.setMat4("invViewProj", invViewProj);
-    flatColorShader.setVec2("resolution", framebufferWidth, framebufferHeight);
-    flatColorShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
-    flatColorShader.setFloat("far", clipFar);
-    flatColorShader.setFloat("near", clipNear);
-    flatColorShader.setMat4(
-        "model", makePlaneModel(planeNormal, planeOffset, planeScale));
-    drawPlane(flatColorShader, planeVAO);
-    glDisable(GL_BLEND);
+    if (appMode == 0) {
+      // ---- AOV: inspect one depth-peel layer ----
+      glDisable(GL_DEPTH_TEST);
 
+      if (aovDisplayMode == 0) {
+        aovColorShader.use();
+        aovColorShader.setInt("colorTextures", 4);
+        aovColorShader.setInt("layer", selectedPeelLayer);
+      } else if (aovDisplayMode == 1) {
+        depthShader.use();
+        depthShader.setInt("depthTextures", 2);
+        depthShader.setInt("layer", selectedPeelLayer);
+        depthShader.setFloat("nearPlane", clipNear);
+        depthShader.setFloat("farPlane",  clipFar);
+      } else {
+        mediumDebugShader.use();
+        mediumDebugShader.setInt("mediumTextures", 3);
+        mediumDebugShader.setInt("layer", selectedPeelLayer);
+      }
 
+      glBindVertexArray(screenQuadVAO);
+      glDrawArrays(GL_TRIANGLES, 0, 6);
+      glBindVertexArray(0);
 
-    // selectedPeelLayer =
-    //     std::clamp(selectedPeelLayer, 0, generatedLayerCount - 1);
+      glEnable(GL_DEPTH_TEST);
 
-    // Framebuffer::bindDefault();
-    // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    } else {
+      // ---- Transmittance: wireframe + movable cutting plane ----
+      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+      wireframeShader.use();
+      wireframeShader.setMat4("projection", projection);
+      wireframeShader.setMat4("view", view);
+      wireframeShader.setVec3("color", 1.0f, 0.0f, 0.0f);
+      drawThreeCubes(wireframeShader, VAO, cubeMediumIds);
+      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-    // glDisable(GL_DEPTH_TEST);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // mediumDebugShader.use();
+      flatColorShader.use();
+      flatColorShader.setInt("depthMap",  2);
+      flatColorShader.setInt("mediumMap", 3);
+      flatColorShader.setInt("numLayers", generatedLayerCount);
+      flatColorShader.setMat4("projection",  projection);
+      flatColorShader.setMat4("view",        view);
+      flatColorShader.setMat4("invViewProj", invViewProj);
+      flatColorShader.setVec2("resolution",  framebufferWidth, framebufferHeight);
+      flatColorShader.setVec3("cameraWorldPos",
+                              camera.Position.x, camera.Position.y, camera.Position.z);
+      flatColorShader.setFloat("far", clipFar);
+      flatColorShader.setInt("vizMode", transVizMode);
+      flatColorShader.setMat4("model", makePlaneModel(planeNormal, planeOffset, planeScale));
+      drawPlane(flatColorShader, planeVAO);
 
-    // mediumDebugShader.setFloat("nearPlane", clipNear);
-    // mediumDebugShader.setFloat("farPlane", clipFar);
-
-    // glActiveTexture(GL_TEXTURE0);
-    // glBindTexture(GL_TEXTURE_2D_ARRAY, mediumArray);
-
-    // mediumDebugShader.setInt("mediumTextures", 0);
-    // mediumDebugShader.setInt("layer", selectedPeelLayer);
-
-    // glBindVertexArray(screenQuadVAO);
-    // glDrawArrays(GL_TRIANGLES, 0, 6);
-
-    // glEnable(GL_DEPTH_TEST);
-
-    // const Framebuffer &displayFbo = peelLayers[selectedPeelLayer];
-
-    // Framebuffer::bindDefault();
-    // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // if (displayMode == 1) {
-    //   glDisable(GL_DEPTH_TEST);
-
-    //   depthShader.use();
-    //   depthShader.setInt("depthTex", 0);
-    //   depthShader.setFloat("nearPlane", clipNear);
-    //   depthShader.setFloat("farPlane", clipFar);
-
-    //   glActiveTexture(GL_TEXTURE0);
-    //   glBindTexture(GL_TEXTURE_2D, displayFbo.depthTexture());
-
-    //   glBindVertexArray(screenQuadVAO);
-    //   glDrawArrays(GL_TRIANGLES, 0, 6);
-    //   glBindVertexArray(0);
-
-    //   glEnable(GL_DEPTH_TEST);
-    // } else if (displayMode == 2) {
-    //   glDisable(GL_DEPTH_TEST);
-
-    //   mediumDebugShader.use();
-    //   mediumDebugShader.setInt("mediumTex", 0);
-
-    //   glActiveTexture(GL_TEXTURE0);
-    //   glBindTexture(GL_TEXTURE_2D, displayFbo.mediumTexture());
-
-    //   glBindVertexArray(screenQuadVAO);
-    //   glDrawArrays(GL_TRIANGLES, 0, 6);
-    //   glBindVertexArray(0);
-
-    //   glEnable(GL_DEPTH_TEST);
-    // } else {
-    //   glBindFramebuffer(GL_READ_FRAMEBUFFER, displayFbo.id());
-    //   glReadBuffer(GL_COLOR_ATTACHMENT0);
-    //   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    //   glBlitFramebuffer(0, 0, displayFbo.width(), displayFbo.height(), 0, 0,
-    //                     framebufferWidth, framebufferHeight,
-    //                     GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    //   Framebuffer::bindDefault();
-
-    //   // flatColorShader.use();
-    //   // flatColorShader.setMat4("projection", projection);
-    //   // flatColorShader.setMat4("view", view);
-    //   // flatColorShader.setMat4(
-    //   //     "model", makePlaneModel(planeNormal, planeOffset, planeScale));
-    //   // flatColorShader.setVec3("objectColor", 0.1f, 0.8f, 0.9f);
-    //   // drawPlane(flatColorShader, planeVAO);
-    // }
+      glDisable(GL_BLEND);
+    }
 
     if (debugUi->draw(camera, vsyncEnabled, clipNear, clipFar,
-                      selectedPeelLayer, generatedLayerCount, displayMode,
-                      planeNormal, planeOffset, planeScale)) {
+                      appMode, selectedPeelLayer, generatedLayerCount, aovDisplayMode,
+                      planeNormal, planeOffset, planeScale, transVizMode)) {
       glfwSwapInterval(vsyncEnabled ? 1 : 0);
     }
     debugUi->endFrame();
@@ -637,24 +493,18 @@ int main() {
   return 0;
 }
 
-// process all input: query GLFW whether relevant keys are pressed/released this
-// frame and react accordingly
-// ---------------------------------------------------------------------------------------------------------
 void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     glfwSetWindowShouldClose(window, true);
 
-  // user may hold down right click to enable camera look around
   bool wantsMouseLook =
       !uiWantsMouse &&
       glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-  if (wantsMouseLook != mouseLookEnabled) {
+  if (wantsMouseLook != mouseLookEnabled)
     setMouseLook(window, wantsMouseLook);
-  }
 
-  if (uiWantsMouse || uiWantsKeyboard) {
+  if (uiWantsMouse || uiWantsKeyboard)
     return;
-  }
 
   if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
     camera.ProcessKeyboard(FORWARD, deltaTime);
@@ -676,17 +526,17 @@ void drawThreeCubes(Shader &shader, unsigned int VAO,
   shader.setInt("mediumId", mediumIds[0]);
   glDrawArrays(GL_TRIANGLES, 0, 36);
 
-  // model = glm::mat4(1.0f);
-  // model = glm::scale(model, glm::vec3(5.0f));
-  // shader.setMat4("model", model);
-  // shader.setInt("mediumId", mediumIds[1]);
-  // glDrawArrays(GL_TRIANGLES, 0, 36);
+  model = glm::mat4(1.0f);
+  model = glm::scale(model, glm::vec3(5.0f));
+  shader.setMat4("model", model);
+  shader.setInt("mediumId", mediumIds[1]);
+  glDrawArrays(GL_TRIANGLES, 0, 36);
 
-  // model = glm::mat4(1.0f);
-  // model = glm::scale(model, glm::vec3(2.0f));
-  // shader.setMat4("model", model);
-  // shader.setInt("mediumId", mediumIds[2]);
-  // glDrawArrays(GL_TRIANGLES, 0, 36);
+  model = glm::mat4(1.0f);
+  model = glm::scale(model, glm::vec3(2.0f));
+  shader.setMat4("model", model);
+  shader.setInt("mediumId", mediumIds[2]);
+  glDrawArrays(GL_TRIANGLES, 0, 36);
 
   glBindVertexArray(0);
 }
@@ -698,35 +548,27 @@ void drawPlane(Shader &shader, unsigned int VAO) {
 }
 
 glm::mat4 makePlaneModel(const glm::vec3 &normal, float offset, float scale) {
-  glm::vec3 n = normal;
-  if (glm::length(n) < 0.0001f) {
-    n = glm::vec3(0.0f, 0.0f, 1.0f);
-  } else {
-    n = glm::normalize(n);
-  }
+  glm::vec3 n = glm::length(normal) < 0.0001f
+                    ? glm::vec3(0.0f, 0.0f, 1.0f)
+                    : glm::normalize(normal);
 
   const glm::vec3 helper = std::abs(n.y) < 0.99f ? glm::vec3(0.0f, 1.0f, 0.0f)
                                                  : glm::vec3(1.0f, 0.0f, 0.0f);
-  const glm::vec3 tangent = glm::normalize(glm::cross(helper, n));
+  const glm::vec3 tangent   = glm::normalize(glm::cross(helper, n));
   const glm::vec3 bitangent = glm::cross(n, tangent);
-  const glm::vec3 position = n * offset;
+  const glm::vec3 position  = n * offset;
 
   glm::mat4 model(1.0f);
-  model[0] = glm::vec4(tangent * scale, 0.0f);
+  model[0] = glm::vec4(tangent   * scale, 0.0f);
   model[1] = glm::vec4(bitangent * scale, 0.0f);
   model[2] = glm::vec4(n, 0.0f);
   model[3] = glm::vec4(position, 1.0f);
   return model;
 }
 
-// glfw: whenever the window size changed (by OS or user resize) this callback
-// function executes
-// ---------------------------------------------------------------------------------------------
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
-  framebufferWidth = width;
+  framebufferWidth  = width;
   framebufferHeight = height;
-  // make sure the viewport matches the new window dimensions; note that width
-  // and height will be significantly larger than specified on retina displays.
   glViewport(0, 0, width, height);
 }
 
@@ -734,8 +576,6 @@ void setMouseLook(GLFWwindow *window, bool enabled) {
   mouseLookEnabled = enabled;
   firstMouse = true;
 
-  // hide cursor in mouse look mode to prevent mouse position failing to update
-  // when hitting window border
   glfwSetInputMode(window, GLFW_CURSOR,
                    enabled ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 
@@ -745,8 +585,6 @@ void setMouseLook(GLFWwindow *window, bool enabled) {
   }
 }
 
-// glfw: whenever the mouse moves, this callback is called
-// -------------------------------------------------------
 void mouse_callback(GLFWwindow *window, double xposIn, double yposIn) {
   float xpos = static_cast<float>(xposIn);
   float ypos = static_cast<float>(yposIn);
@@ -758,25 +596,19 @@ void mouse_callback(GLFWwindow *window, double xposIn, double yposIn) {
   }
 
   float xoffset = xpos - lastX;
-  float yoffset =
-      lastY - ypos; // reversed since y-coordinates go from bottom to top
+  float yoffset = lastY - ypos;
 
   lastX = xpos;
   lastY = ypos;
 
-  if (!mouseLookEnabled) {
+  if (!mouseLookEnabled)
     return;
-  }
 
   camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
-// glfw: whenever the mouse scroll wheel scrolls, this callback is called
-// ----------------------------------------------------------------------
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
-  if (uiWantsMouse) {
+  if (uiWantsMouse)
     return;
-  }
-
   camera.ProcessMouseScroll(static_cast<float>(yoffset));
 }
