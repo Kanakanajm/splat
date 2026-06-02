@@ -1,0 +1,20 @@
+{
+  "light": {
+    "position": [0.0, 2.0, 2.0],
+    "power": [1.0, 1.0, 1.0],
+    "medium": "vacuum"
+  },
+  "mediums": {
+    "fog1": { "sigma_s": 0.5, "sigma_a": 0.0 },
+    "fog2": { "sigma_s": 1.5, "sigma_a": 0.0 },
+    "fog3": { "sigma_s": 3.0, "sigma_a": 0.0 }
+  },
+  "bsdfs": {
+    "shell": { "kind": "MediumShell" }
+  },
+  "instances": {
+    "Cube1": { "bsdf": "shell", "medium_in": "fog1", "medium_out": "vacuum" },
+    "Cube2": { "bsdf": "shell", "medium_in": "fog2", "medium_out": "vacuum" },
+    "Cube3": { "bsdf": "shell", "medium_in": "fog3", "medium_out": "vacuum" }
+  }
+}

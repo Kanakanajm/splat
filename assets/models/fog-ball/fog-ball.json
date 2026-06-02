@@ -1,0 +1,16 @@
+{
+  "light": {
+    "position": [0.0, 4, 0.0],
+    "medium": "vacuum",
+    "power": [100.0, 100.0, 100.0]
+  },
+  "mediums": {
+    "smoke": { "sigma_s": 1.0, "sigma_a": 0.0 }
+  },
+  "bsdfs": {
+    "pass": { "kind": "MediumShell" }
+  },
+  "instances": {
+        "Sphere": { "bsdf": "pass", "medium_in": "smoke", "medium_out": "vacuum" }
+  }
+}
