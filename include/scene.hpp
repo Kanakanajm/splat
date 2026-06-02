@@ -41,7 +41,8 @@ public:
     // --- OpenGL visualization (implemented in scene_gl.cpp, app-only).
     // Upload* needs a current GL context; it builds VAO/VBOs from the scene data.
     void upload_geometry();
-    void draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>& instance_visible) const;
+    void draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>& instance_visible,
+                       bool skip_media = false) const;
 
     void upload_points(const std::vector<PhotonPoint>& points);
     uint32_t max_bounce_depth() const { return points_max_bounce_; }
@@ -56,6 +57,16 @@ public:
     // bounce_filter = -1 shows all bounces; >= 0 shows only that depth.
     void draw_beams(Shader& shader, int aov_mode, const std::vector<bool>& medium_visible,
                     int bounce_filter = -1);
+
+    // --- Depth peel (camera-side transmittance maps).
+    // Allocates GL_TEXTURE_2D_ARRAY depth and medium arrays + FBO.
+    void         init_depth_peel(int width, int height, int max_layers = 8);
+    // Draws all scene geometry per-instance, setting mediumId uniform from instance_medium_in_.
+    void         draw_geometry_peel(Shader& shader) const;
+    unsigned int peel_fbo()          const { return peel_fbo_; }
+    unsigned int peel_depth_array()  const { return peel_depth_array_; }
+    unsigned int peel_medium_array() const { return peel_medium_array_; }
+    int          peel_max_layers()   const { return peel_max_layers_; }
 
 private:
     const RayModel&       model_;
@@ -90,4 +101,10 @@ private:
     int                     beams_bounce_filter_cache_ = -2;  // -2 = uninitialized
     float                   beam_max_bounce_ = 1.0f;
     float                   beam_max_length_ = 1.0f;
+
+    // GL handles for depth peel (0 until init_depth_peel).
+    unsigned int peel_fbo_          = 0;
+    unsigned int peel_depth_array_  = 0;
+    unsigned int peel_medium_array_ = 0;
+    int          peel_max_layers_   = 0;
 };

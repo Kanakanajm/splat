@@ -96,7 +96,8 @@ void Scene::upload_geometry() {
     glBindVertexArray(0);
 }
 
-void Scene::draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>& instance_visible) const {
+void Scene::draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>& instance_visible,
+                          bool skip_media) const {
     if (geom_vao_ == 0 || geom_ranges_.empty()) return;
 
     shader.use();
@@ -105,8 +106,11 @@ void Scene::draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>&
     const bool wireframe = (aov_mode == 0 || aov_mode == 4);
     glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
 
+    const bool skip_medium_inst = skip_media || (aov_mode == 1); // always skip for Diffuse AOV
     for (uint32_t i = 0; i < static_cast<uint32_t>(geom_ranges_.size()); ++i) {
         if (!instance_visible.empty() && i < instance_visible.size() && !instance_visible[i])
+            continue;
+        if (skip_medium_inst && i < instance_medium_in_.size() && instance_medium_in_[i] != 0u)
             continue;
         shader.setInt("instanceId", static_cast<int>(i));
         const auto& col = bsdf_table_[instance_bsdf_[i]].color;
@@ -309,5 +313,42 @@ void Scene::draw_beams(Shader& shader, int aov_mode, const std::vector<bool>& me
     shader.setFloat("maxLength", beam_max_length_);
     glBindVertexArray(beams_vao_);
     glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(beam_vertex_count_));
+    glBindVertexArray(0);
+}
+
+// ---- Depth Peel -------------------------------------------------------------
+
+void Scene::init_depth_peel(int width, int height, int max_layers) {
+    peel_max_layers_ = max_layers;
+
+    if (peel_depth_array_ == 0) glGenTextures(1, &peel_depth_array_);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, peel_depth_array_);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT24,
+                 width, height, max_layers, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    if (peel_medium_array_ == 0) glGenTextures(1, &peel_medium_array_);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, peel_medium_array_);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_R32UI,
+                 width, height, max_layers, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    if (peel_fbo_ == 0) glGenFramebuffers(1, &peel_fbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, peel_fbo_);
+    const GLenum drawBuf = GL_COLOR_ATTACHMENT0;
+    glDrawBuffers(1, &drawBuf);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void Scene::draw_geometry_peel(Shader& shader) const {
+    if (geom_vao_ == 0 || geom_ranges_.empty()) return;
+    glBindVertexArray(geom_vao_);
+    for (uint32_t i = 0; i < static_cast<uint32_t>(geom_ranges_.size()); ++i) {
+        shader.setInt("mediumId", static_cast<int>(instance_medium_in_[i]));
+        const auto& r = geom_ranges_[i];
+        glDrawArrays(GL_TRIANGLES, static_cast<GLint>(r.start), static_cast<GLsizei>(r.count));
+    }
     glBindVertexArray(0);
 }

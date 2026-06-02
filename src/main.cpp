@@ -123,16 +123,27 @@ int main(int argc, char **argv) {
 
   PhotonTracer tracer(scene, bvh, light);
   Rng rng(0xDECAFu);
-  tracer.trace(/*photon_count=*/30000u, /*max_depth=*/64u, rng);
+  tracer.trace(/*photon_count=*/100u, /*max_depth=*/64u, rng);
   scene.upload_geometry();
   scene.upload_points(tracer.points());
   scene.upload_beams(tracer.beams());
   std::cout << "Traced " << tracer.points().size() << " points, " << tracer.beams().size()
             << " beams" << std::endl;
 
-  Shader pointShader("shaders/point.vs", "shaders/point.fs");
-  Shader beamShader ("shaders/beam.vs",  "shaders/beam.fs");
-  Shader geomShader ("shaders/geom.vs",  "shaders/geom.fs");
+  Shader pointShader        ("shaders/point.vs",          "shaders/point.fs");
+  Shader beamShader         ("shaders/beam.vs", "shaders/beam.gs", "shaders/beam.fs");
+  Shader geomShader         ("shaders/geom.vs",           "shaders/geom.fs");
+  Shader depthPeelInitShader("shaders/geom.vs", "shaders/depth_peel_init.fs");
+  Shader depthPeelShader    ("shaders/geom.vs", "shaders/depth_peel.fs");
+  Shader quadShader         ("shaders/quad.vs",           "shaders/quad.fs");
+
+  unsigned int emptyVAO = 0;
+  glGenVertexArrays(1, &emptyVAO);
+
+  scene.init_depth_peel(framebufferWidth, framebufferHeight);
+
+  unsigned int peelQuery;
+  glGenQueries(1, &peelQuery);
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
@@ -159,15 +170,116 @@ int main(int argc, char **argv) {
     const glm::mat4 projection =
         glm::perspective(glm::radians(camera.Zoom), aspectRatio, 0.1f, 100.0f);
     const glm::mat4 view = camera.GetViewMatrix();
+    const glm::mat4 invViewProj = glm::inverse(projection * view);
 
     const ViewState& vs = debugUi->viewState();
 
-    // Depth AOV uses a white background so far-away geometry reads as white.
-    const bool depthMode = vs.showGeometry && vs.geomAov == ViewState::GeomAov::Depth;
-    glClearColor(depthMode ? 1.0f : 0.05f,
-                 depthMode ? 1.0f : 0.05f,
-                 depthMode ? 1.0f : 0.08f, 1.0f);
+    // --- Depth peel pass (builds camera-side transmittance maps)
+    int peelLayerCount = 1;
+    {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        glDisable(GL_CULL_FACE);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, scene.peel_fbo());
+
+        // Layer 0: no depth peeling, just record first hit + medium mask.
+        glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                  scene.peel_depth_array(), 0, 0);
+        glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                  scene.peel_medium_array(), 0, 0);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        const GLuint zeroClear[4] = {0u, 0u, 0u, 0u};
+        glClearBufferuiv(GL_COLOR, 0, zeroClear);
+
+        setCameraUniforms(depthPeelInitShader, projection, view);
+        scene.draw_geometry_peel(depthPeelInitShader);
+
+        // Bind texture arrays for sampling previous layers.
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_depth_array());
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_medium_array());
+        glActiveTexture(GL_TEXTURE0);
+
+        depthPeelShader.use();
+        depthPeelShader.setInt("previousDepths", 0);
+        depthPeelShader.setInt("previousMedia",  1);
+        depthPeelShader.setFloat("peelEpsilon",  1e-5f);
+
+        // Layers 1+: peel past the previous layer.
+        for (int layer = 1; layer < scene.peel_max_layers(); ++layer) {
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                      scene.peel_depth_array(), 0, layer);
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                      scene.peel_medium_array(), 0, layer);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glClearBufferuiv(GL_COLOR, 0, zeroClear);
+
+            setCameraUniforms(depthPeelShader, projection, view);
+            depthPeelShader.setInt("previousLayerIdx", layer - 1);
+
+            glBeginQuery(GL_ANY_SAMPLES_PASSED, peelQuery);
+            scene.draw_geometry_peel(depthPeelShader);
+            glEndQuery(GL_ANY_SAMPLES_PASSED);
+
+            GLuint anySamples = GL_FALSE;
+            glGetQueryObjectuiv(peelQuery, GL_QUERY_RESULT, &anySamples);
+            if (!anySamples) break;
+            peelLayerCount = layer + 1;
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    // Splat mode shows background × T_cam; all other modes use the standard background.
+    const bool isSplatMode = vs.showBeams && (vs.beamAov == ViewState::BeamAov::Splat);
+    const bool depthMode   = vs.showGeometry && vs.geomAov == ViewState::GeomAov::Depth;
+    if (isSplatMode) {
+      glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    } else {
+      glClearColor(depthMode ? 1.0f : 0.392f,
+                   depthMode ? 1.0f : 0.392f,
+                   depthMode ? 1.0f : 0.392f, 1.0f);
+    }
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // --- Background quad pass (Splat mode: L_bg * T_cam drawn before geometry)
+    if (isSplatMode) {
+      constexpr int kMaxMedia = 16;
+      float mediaSigmaT[kMaxMedia] = {};
+      for (uint32_t i = 0; i < std::min(scene.medium_count(), static_cast<uint32_t>(kMaxMedia)); ++i)
+          mediaSigmaT[i] = scene.medium(i).sigma_t();
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_depth_array());
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_medium_array());
+      glActiveTexture(GL_TEXTURE0);
+
+      quadShader.use();
+      quadShader.setInt("depthMap", 0);
+      quadShader.setInt("mediumMap", 1);
+      quadShader.setInt("numPeelLayers", peelLayerCount);
+      quadShader.setMat4("invViewProj", invViewProj);
+      quadShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      quadShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                       static_cast<float>(framebufferHeight));
+      quadShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+      quadShader.setVec3("bgColor", 1.0f, 1.0f, 1.0f);
+
+      glDepthMask(GL_FALSE);
+      glDepthFunc(GL_LEQUAL);  // quad sits at far-plane depth 1.0
+
+      glBindVertexArray(emptyVAO);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
+      glBindVertexArray(0);
+
+      glDepthFunc(GL_LESS);
+      glDepthMask(GL_TRUE);
+    }
 
     // --- Geometry pass
     if (vs.showGeometry) {
@@ -178,7 +290,9 @@ int main(int argc, char **argv) {
       geomShader.setVec3("lightPos", light.position.x, light.position.y, light.position.z);
       geomShader.setFloat("nearPlane", 0.1f);
       geomShader.setFloat("farPlane", 10.0f);
-      scene.draw_geometry(geomShader, geomAov, vs.instanceVisible);
+      geomShader.setInt("attenuateMedium", 0);
+
+      scene.draw_geometry(geomShader, geomAov, vs.instanceVisible, false);
     }
 
     // --- Photon point pass
@@ -189,9 +303,35 @@ int main(int argc, char **argv) {
       scene.draw_points(pointShader, static_cast<int>(vs.pointAov), vs.instancePointsVisible, bounceFilter);
     }
 
-    // --- Photon beam pass
-    if (vs.showBeams) {
+    // --- Photon beam pass (skipped in Splat mode — background quad is the visualization)
+    if (vs.showBeams && !isSplatMode) {
       setCameraUniforms(beamShader, projection, view);
+      beamShader.setVec3("cameraDir", camera.Front.x, camera.Front.y, camera.Front.z);
+      beamShader.setFloat("beamRadius", vs.beamRadius);
+
+      constexpr int kMaxMedia = 16;
+      float mediaSigmaT[kMaxMedia] = {};
+      float mediaSigmaS[kMaxMedia] = {};
+      for (uint32_t i = 0; i < std::min(scene.medium_count(), static_cast<uint32_t>(kMaxMedia)); ++i) {
+          mediaSigmaT[i] = scene.medium(i).sigma_t();
+          mediaSigmaS[i] = scene.medium(i).sigma_s;
+      }
+      beamShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+      beamShader.setFloatArray("mediaSigmaS", mediaSigmaS, kMaxMedia);
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_depth_array());
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_medium_array());
+      glActiveTexture(GL_TEXTURE0);
+      beamShader.setInt("depthMap", 0);
+      beamShader.setInt("mediumMap", 1);
+      beamShader.setInt("numPeelLayers", peelLayerCount);
+      beamShader.setMat4("invViewProj", invViewProj);
+      beamShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      beamShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                       static_cast<float>(framebufferHeight));
+
       const int beamBounceFilter = vs.allBeamBounces ? -1 : vs.beamBounceFilter;
       scene.draw_beams(beamShader, static_cast<int>(vs.beamAov), vs.mediumBeamsVisible, beamBounceFilter);
     }
@@ -230,6 +370,7 @@ int main(int argc, char **argv) {
 
   debugUi.reset();
 
+  glDeleteQueries(1, &peelQuery);
   glfwDestroyWindow(window);
   glfwTerminate();
   return 0;
