@@ -45,7 +45,7 @@ TEST_CASE("SceneConfig: light power round-trips through JSON", "[scene_config]")
     })");
 
     auto scene = make_empty_scene();
-    const PointLight light = SceneConfig::load(model_path).apply(scene);
+    const PointLight light = std::get<PointLight>(SceneConfig::load(model_path).apply(scene));
 
     REQUIRE(light.position.x == Catch::Approx(1.0f));
     REQUIRE(light.position.y == Catch::Approx(2.0f));
@@ -61,7 +61,7 @@ TEST_CASE("SceneConfig: light power defaults to white when omitted", "[scene_con
     })");
 
     auto scene = make_empty_scene();
-    const PointLight light = SceneConfig::load(model_path).apply(scene);
+    const PointLight light = std::get<PointLight>(SceneConfig::load(model_path).apply(scene));
 
     REQUIRE(light.power.x == Catch::Approx(1.0f));
     REQUIRE(light.power.y == Catch::Approx(1.0f));

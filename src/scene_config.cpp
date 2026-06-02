@@ -4,6 +4,9 @@
 
 #include <json.hpp>
 
+#include <algorithm>
+#include <cfloat>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -90,17 +93,26 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
         }
     }
 
-    // --- light ---------------------------------------------------------------
-    if (!doc.contains("light"))
-        throw std::runtime_error("SceneConfig: missing required 'light' block");
+    // --- light / env_light ---------------------------------------------------
+    if (!doc.contains("light") && !doc.contains("env_light"))
+        throw std::runtime_error("SceneConfig: missing 'light' or 'env_light' block");
 
-    const auto& l = doc["light"];
-    cfg.light_pos_   = parse_vec3(l.at("position"));
-    if (l.contains("power")) cfg.light_power_ = parse_vec3(l["power"]);
+    if (doc.contains("light")) {
+        const auto& l = doc["light"];
+        cfg.light_pos_   = parse_vec3(l.at("position"));
+        if (l.contains("power")) cfg.light_power_ = parse_vec3(l["power"]);
 
-    if (l.contains("medium")) {
-        cfg.light_medium_ = l["medium"].get<std::string>();
-        require_medium(cfg.light_medium_, "light");
+        if (l.contains("medium")) {
+            cfg.light_medium_ = l["medium"].get<std::string>();
+            require_medium(cfg.light_medium_, "light");
+        }
+    }
+
+    if (doc.contains("env_light")) {
+        EnvLightCfg ec;
+        const auto& el = doc["env_light"];
+        if (el.contains("color")) ec.color = parse_vec3(el["color"]);
+        cfg.env_light_ = ec;
     }
 
     return cfg;
@@ -108,7 +120,7 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
 
 // ---- SceneConfig::apply -----------------------------------------------------
 
-PointLight SceneConfig::apply(Scene& scene) const {
+Light SceneConfig::apply(Scene& scene) const {
     // Assign stable integer IDs (deterministic: sorted by name for reproducibility).
     std::unordered_map<std::string, uint32_t> bsdf_ids;
     std::unordered_map<std::string, uint32_t> medium_ids;
@@ -147,6 +159,21 @@ PointLight SceneConfig::apply(Scene& scene) const {
         scene.set_instance_medium(iid, resolve_medium(ic.medium_in), resolve_medium(ic.medium_out));
     }
 
+    if (env_light_) {
+        // Compute AABB of all triangle vertices, then derive a bounding sphere with 10% margin.
+        const auto& tris = scene.model().triangles();
+        float ax = FLT_MAX, ay = FLT_MAX, az = FLT_MAX;
+        float bx = -FLT_MAX, by = -FLT_MAX, bz = -FLT_MAX;
+        for (const auto& v : tris) {
+            ax = std::min(ax, v.x); ay = std::min(ay, v.y); az = std::min(az, v.z);
+            bx = std::max(bx, v.x); by = std::max(by, v.y); bz = std::max(bz, v.z);
+        }
+        const tinybvh::bvhvec3 center{(ax + bx) * 0.5f, (ay + by) * 0.5f, (az + bz) * 0.5f};
+        const float dx = (bx - ax) * 0.5f, dy = (by - ay) * 0.5f, dz = (bz - az) * 0.5f;
+        const float radius = std::sqrt(dx * dx + dy * dy + dz * dz) * 1.1f;
+        return EnvLight{env_light_->color, center, radius, 0u};
+    }
+
     const uint32_t light_mid = resolve_medium(light_medium_);
-    return PointLight{ light_pos_, light_power_, light_mid };
+    return PointLight{light_pos_, light_power_, light_mid};
 }

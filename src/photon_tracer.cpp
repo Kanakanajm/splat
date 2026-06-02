@@ -32,11 +32,13 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
     constexpr float kEps = 1e-4f;  // ray-origin offset to escape the interaction point
 
     const float n = static_cast<float>(photon_count);
-    const tinybvh::bvhvec3 init_weight = light_.power;
+    const tinybvh::bvhvec3 init_weight = std::visit(
+        [](const auto& l) -> tinybvh::bvhvec3 { return l.total_power(); }, light_);
+    const uint32_t init_medium = std::visit([](const auto& l) -> uint32_t { return l.medium_id; }, light_);
 
     for (uint32_t i = 0; i < photon_count; ++i) {
-        tinybvh::Ray     ray    = light_.emit_ray(rng);
-        uint32_t         m      = light_.medium_id; // current medium
+        tinybvh::Ray     ray    = std::visit([&](const auto& l) { return l.emit_ray(rng); }, light_);
+        uint32_t         m      = init_medium; // current medium
         tinybvh::bvhvec3 weight = init_weight; // current weight
 
         for (uint32_t depth = 0; depth < max_depth; ++depth) {

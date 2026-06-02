@@ -12,10 +12,10 @@
 #include "camera.hpp"
 #include "debug_ui.hpp"
 
+#include "env_light.hpp"
 #include "ray_model.hpp"
 #include "scene.hpp"
 #include "scene_config.hpp"
-#include "point_light.hpp"
 #include "photon_tracer.hpp"
 #include "random.hpp"
 #include "tiny_bvh.h"
@@ -119,11 +119,11 @@ int main(int argc, char **argv) {
   bvh.Build(rayModel.triangles().data(), rayModel.triangle_count());
 
   Scene scene(rayModel);
-  PointLight light = SceneConfig::load(scenePath).apply(scene);
+  auto light = SceneConfig::load(scenePath).apply(scene);
 
   PhotonTracer tracer(scene, bvh, light);
   Rng rng(0xDECAFu);
-  tracer.trace(/*photon_count=*/100u, /*max_depth=*/64u, rng);
+  tracer.trace(/*photon_count=*/10000u, /*max_depth=*/32u, rng);
   scene.upload_geometry();
   scene.upload_points(tracer.points());
   scene.upload_beams(tracer.beams());
@@ -268,7 +268,10 @@ int main(int argc, char **argv) {
       quadShader.setVec2("resolution", static_cast<float>(framebufferWidth),
                                        static_cast<float>(framebufferHeight));
       quadShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
-      quadShader.setVec3("bgColor", 1.0f, 1.0f, 1.0f);
+      const auto* el = std::get_if<EnvLight>(&light);
+      const glm::vec3 bgColor = el ? glm::vec3{el->color.x, el->color.y, el->color.z}
+                                   : glm::vec3{0.0f};
+      quadShader.setVec3("bgColor", bgColor.x, bgColor.y, bgColor.z);
 
       glDepthMask(GL_FALSE);
       glDepthFunc(GL_LEQUAL);  // quad sits at far-plane depth 1.0
@@ -287,7 +290,10 @@ int main(int argc, char **argv) {
       setCameraUniforms(geomShader, projection, view);
       geomShader.setInt("aov_mode", geomAov);
       geomShader.setVec3("cameraPos", camera.Position.x, camera.Position.y, camera.Position.z);
-      geomShader.setVec3("lightPos", light.position.x, light.position.y, light.position.z);
+      const auto* pl = std::get_if<PointLight>(&light);
+      const glm::vec3 lightPos = pl ? glm::vec3{pl->position.x, pl->position.y, pl->position.z}
+                                    : glm::vec3{0.0f};
+      geomShader.setVec3("lightPos", lightPos.x, lightPos.y, lightPos.z);
       geomShader.setFloat("nearPlane", 0.1f);
       geomShader.setFloat("farPlane", 10.0f);
       geomShader.setInt("attenuateMedium", 0);

@@ -1,8 +1,9 @@
 #pragma once
 
 #include "bsdf.hpp"
-#include "point_light.hpp"
+#include "env_light.hpp"
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -16,8 +17,8 @@ public:
     static SceneConfig load(const std::string& model_path);
 
     // Populates scene's bsdf/medium tables and per-instance assignments.
-    // Returns the configured PointLight. Throws on any inconsistency.
-    PointLight apply(Scene& scene) const;
+    // Returns the configured Light (PointLight or EnvLight). Throws on any inconsistency.
+    Light apply(Scene& scene) const;
 
 private:
     struct BsdfCfg {
@@ -31,11 +32,15 @@ private:
         std::string medium_in;  // empty = vacuum
         std::string medium_out; // empty = vacuum
     };
+    struct EnvLightCfg {
+        tinybvh::bvhvec3 color = {1.0f, 1.0f, 1.0f};
+    };
 
     std::unordered_map<std::string, BsdfCfg>     bsdfs_;
     std::unordered_map<std::string, MediumCfg>   mediums_;
     std::unordered_map<std::string, InstanceCfg>  instances_;
-    tinybvh::bvhvec3 light_pos_{};
-    tinybvh::bvhvec3 light_power_ = {1.0f, 1.0f, 1.0f};
-    std::string      light_medium_;  // empty = vacuum
+    tinybvh::bvhvec3              light_pos_{};
+    tinybvh::bvhvec3              light_power_ = {1.0f, 1.0f, 1.0f};
+    std::string                   light_medium_;  // empty = vacuum
+    std::optional<EnvLightCfg>    env_light_;
 };

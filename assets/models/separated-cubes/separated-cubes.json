@@ -1,9 +1,5 @@
 {
-  "light": {
-    "position": [0.0, 2.0, 2.0],
-    "power": [1.0, 1.0, 1.0],
-    "medium": "vacuum"
-  },
+  "env_light": { "color": [1.0, 1.0, 1.0] },
   "mediums": {
     "fog1": { "sigma_s": 0.0, "sigma_a": 0.3 },
     "fog2": { "sigma_s": 0.0, "sigma_a": 0.5 },

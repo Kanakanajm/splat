@@ -1,7 +1,7 @@
 #pragma once
 
+#include "env_light.hpp"
 #include "photon.hpp"
-#include "point_light.hpp"
 #include "random.hpp"
 #include "scene.hpp"
 #include "tiny_bvh.h"
@@ -19,7 +19,7 @@
 // tracked, so paths terminate only at the hard depth cap or on a miss.
 class PhotonTracer {
 public:
-    PhotonTracer(const Scene& scene, const tinybvh::BVH& bvh, const PointLight& light)
+    PhotonTracer(const Scene& scene, const tinybvh::BVH& bvh, const Light& light)
         : scene_(scene), bvh_(bvh), light_(light) {}
 
     void trace(uint32_t photon_count, uint32_t max_depth, Rng& rng);
@@ -30,7 +30,7 @@ public:
 private:
     const Scene&             scene_;
     const tinybvh::BVH&      bvh_;
-    const PointLight&        light_;
+    Light                    light_;
     std::vector<PhotonPoint> points_;
     std::vector<PhotonBeam>  beams_;
 };
