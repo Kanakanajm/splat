@@ -119,9 +119,9 @@ int main(int argc, char **argv) {
   bvh.Build(rayModel.triangles().data(), rayModel.triangle_count());
 
   Scene scene(rayModel);
-  auto light = SceneConfig::load(scenePath).apply(scene);
+  auto lights = SceneConfig::load(scenePath).apply(scene);
 
-  PhotonTracer tracer(scene, bvh, light);
+  PhotonTracer tracer(scene, bvh, lights);
   Rng rng(0xDECAFu);
   tracer.trace(/*photon_count=*/10000u, /*max_depth=*/32u, rng);
   scene.upload_geometry();
@@ -268,9 +268,10 @@ int main(int argc, char **argv) {
       quadShader.setVec2("resolution", static_cast<float>(framebufferWidth),
                                        static_cast<float>(framebufferHeight));
       quadShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
-      const auto* el = std::get_if<EnvLight>(&light);
-      const glm::vec3 bgColor = el ? glm::vec3{el->color.x, el->color.y, el->color.z}
-                                   : glm::vec3{0.0f};
+      glm::vec3 bgColor{0.0f};
+      for (const auto& l : lights)
+          if (const auto* el = std::get_if<EnvLight>(&l))
+              { bgColor = {el->color.x, el->color.y, el->color.z}; break; }
       quadShader.setVec3("bgColor", bgColor.x, bgColor.y, bgColor.z);
 
       glDepthMask(GL_FALSE);
@@ -290,9 +291,10 @@ int main(int argc, char **argv) {
       setCameraUniforms(geomShader, projection, view);
       geomShader.setInt("aov_mode", geomAov);
       geomShader.setVec3("cameraPos", camera.Position.x, camera.Position.y, camera.Position.z);
-      const auto* pl = std::get_if<PointLight>(&light);
-      const glm::vec3 lightPos = pl ? glm::vec3{pl->position.x, pl->position.y, pl->position.z}
-                                    : glm::vec3{0.0f};
+      glm::vec3 lightPos{0.0f};
+      for (const auto& l : lights)
+          if (const auto* pl = std::get_if<PointLight>(&l))
+              { lightPos = {pl->position.x, pl->position.y, pl->position.z}; break; }
       geomShader.setVec3("lightPos", lightPos.x, lightPos.y, lightPos.z);
       geomShader.setFloat("nearPlane", 0.1f);
       geomShader.setFloat("farPlane", 10.0f);

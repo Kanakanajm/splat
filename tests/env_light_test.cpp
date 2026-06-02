@@ -101,7 +101,7 @@ TEST_CASE("SceneConfig: env_light parsed and bounding sphere matches model", "[e
     RayModel model{std::move(tris), std::move(inst), 1u};
     Scene scene{model};
 
-    const EnvLight el = std::get<EnvLight>(SceneConfig::load(model_path).apply(scene));
+    const EnvLight el = std::get<EnvLight>(SceneConfig::load(model_path).apply(scene)[0]);
 
     REQUIRE(el.color.x == Catch::Approx(0.5f));
     REQUIRE(el.color.y == Catch::Approx(1.0f));

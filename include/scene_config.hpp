@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 class Scene;
 
@@ -17,8 +18,9 @@ public:
     static SceneConfig load(const std::string& model_path);
 
     // Populates scene's bsdf/medium tables and per-instance assignments.
-    // Returns the configured Light (PointLight or EnvLight). Throws on any inconsistency.
-    Light apply(Scene& scene) const;
+    // Returns all configured lights (one per "light"/"env_light" block present).
+    // Throws on any inconsistency.
+    std::vector<Light> apply(Scene& scene) const;
 
 private:
     struct BsdfCfg {
@@ -39,6 +41,7 @@ private:
     std::unordered_map<std::string, BsdfCfg>     bsdfs_;
     std::unordered_map<std::string, MediumCfg>   mediums_;
     std::unordered_map<std::string, InstanceCfg>  instances_;
+    bool                          has_point_light_ = false;
     tinybvh::bvhvec3              light_pos_{};
     tinybvh::bvhvec3              light_power_ = {1.0f, 1.0f, 1.0f};
     std::string                   light_medium_;  // empty = vacuum

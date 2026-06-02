@@ -19,8 +19,13 @@
 // tracked, so paths terminate only at the hard depth cap or on a miss.
 class PhotonTracer {
 public:
-    PhotonTracer(const Scene& scene, const tinybvh::BVH& bvh, const Light& light)
-        : scene_(scene), bvh_(bvh), light_(light) {}
+    // Single-light convenience constructor.
+    PhotonTracer(const Scene& scene, const tinybvh::BVH& bvh, Light light)
+        : scene_(scene), bvh_(bvh), lights_({std::move(light)}) {}
+
+    // Multi-light constructor.
+    PhotonTracer(const Scene& scene, const tinybvh::BVH& bvh, std::vector<Light> lights)
+        : scene_(scene), bvh_(bvh), lights_(std::move(lights)) {}
 
     void trace(uint32_t photon_count, uint32_t max_depth, Rng& rng);
 
@@ -30,7 +35,7 @@ public:
 private:
     const Scene&             scene_;
     const tinybvh::BVH&      bvh_;
-    Light                    light_;
+    std::vector<Light>       lights_;
     std::vector<PhotonPoint> points_;
     std::vector<PhotonBeam>  beams_;
 };

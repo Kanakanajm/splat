@@ -98,6 +98,7 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
         throw std::runtime_error("SceneConfig: missing 'light' or 'env_light' block");
 
     if (doc.contains("light")) {
+        cfg.has_point_light_ = true;
         const auto& l = doc["light"];
         cfg.light_pos_   = parse_vec3(l.at("position"));
         if (l.contains("power")) cfg.light_power_ = parse_vec3(l["power"]);
@@ -120,7 +121,7 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
 
 // ---- SceneConfig::apply -----------------------------------------------------
 
-Light SceneConfig::apply(Scene& scene) const {
+std::vector<Light> SceneConfig::apply(Scene& scene) const {
     // Assign stable integer IDs (deterministic: sorted by name for reproducibility).
     std::unordered_map<std::string, uint32_t> bsdf_ids;
     std::unordered_map<std::string, uint32_t> medium_ids;
@@ -159,6 +160,13 @@ Light SceneConfig::apply(Scene& scene) const {
         scene.set_instance_medium(iid, resolve_medium(ic.medium_in), resolve_medium(ic.medium_out));
     }
 
+    std::vector<Light> lights;
+
+    if (has_point_light_) {
+        const uint32_t light_mid = resolve_medium(light_medium_);
+        lights.push_back(PointLight{light_pos_, light_power_, light_mid});
+    }
+
     if (env_light_) {
         // Compute AABB of all triangle vertices, then derive a bounding sphere with 10% margin.
         const auto& tris = scene.model().triangles();
@@ -171,9 +179,8 @@ Light SceneConfig::apply(Scene& scene) const {
         const tinybvh::bvhvec3 center{(ax + bx) * 0.5f, (ay + by) * 0.5f, (az + bz) * 0.5f};
         const float dx = (bx - ax) * 0.5f, dy = (by - ay) * 0.5f, dz = (bz - az) * 0.5f;
         const float radius = std::sqrt(dx * dx + dy * dy + dz * dz) * 1.1f;
-        return EnvLight{env_light_->color, center, radius, 0u};
+        lights.push_back(EnvLight{env_light_->color, center, radius, 0u});
     }
 
-    const uint32_t light_mid = resolve_medium(light_medium_);
-    return PointLight{light_pos_, light_power_, light_mid};
+    return lights;
 }
