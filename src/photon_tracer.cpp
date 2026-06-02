@@ -60,7 +60,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
                                                ray.O.y + t_media * ray.D.y,
                                                ray.O.z + t_media * ray.D.z};
 
-                beams_.push_back({ray.O, scatter, m, depth, weight});
+                beams_.push_back({ray.O, scatter, m, depth, weight / photon_count});
 
                 // Russian roulette.
                 const float prr = std::max(0.05f, std::min(0.95f, max_component(weight)));
