@@ -1,6 +1,7 @@
 # medium-sphere scene
 
 o Sphere
+usemtl Sphere
 v 0.000000 0.800000 0.000000
 v 0.156072 0.784628 0.000000
 v 0.144192 0.784628 0.059726

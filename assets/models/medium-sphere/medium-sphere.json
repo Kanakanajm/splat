@@ -5,7 +5,7 @@
     "medium": "vacuum"
   },
   "mediums": {
-    "fog": { "sigma_s": 1.0, "sigma_a": 0.5 }
+    "fog": { "sigma_s": 0.0, "sigma_a": 0.7 }
   },
   "bsdfs": {
     "shell": { "kind": "MediumShell" }
