@@ -32,10 +32,9 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard);
-// callback when mouseLookEnabled changes
 void setMouseLook(GLFWwindow *window, bool enabled);
-// set the shared camera matrices on any shader (identity model)
 void setCameraUniforms(Shader &shader, const glm::mat4 &projection, const glm::mat4 &view);
+void recreateHdrFbo(int width, int height);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -52,8 +51,11 @@ bool mouseLookEnabled = false;
 bool uiWantsMouse = false;
 
 // timing
-float deltaTime = 0.0f; // time between current frame and last frame
+float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+
+// HDR FBO for linear-space accumulation
+unsigned int hdrFbo = 0, hdrColorTex = 0, hdrDepthRbo = 0;
 
 int main(int argc, char **argv) {
   // glfw init check
@@ -92,14 +94,20 @@ int main(int argc, char **argv) {
   
   bool vsyncEnabled = true;
   glfwSwapInterval(vsyncEnabled ? 1 : 0);
-  
+
   // retrieve framebuffer size
   glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
 
-  // set view port with the whole frame buffer
   glViewport(0, 0, framebufferWidth, framebufferHeight);
 
-  // opengl will discard fragments that failed depth test
+  // HDR FBO: accumulate radiance in linear float16 space.
+  recreateHdrFbo(framebufferWidth, framebufferHeight);
+
+  // Empty VAO for the fullscreen triangle draw (no attributes, positions
+  // are generated from gl_VertexID in hdr.vs).
+  unsigned int screenVao = 0;
+  glGenVertexArrays(1, &screenVao);
+
   glEnable(GL_DEPTH_TEST);
   // let the vertex shader control point size via gl_PointSize
   glEnable(GL_PROGRAM_POINT_SIZE);
@@ -126,7 +134,7 @@ int main(int argc, char **argv) {
 
   PhotonTracer tracer(scene, bvh, light);
   Rng rng(0xDECAFu);
-  tracer.trace(photonCount, /*max_depth=*/64u, rng);
+  tracer.trace(photonCount, /*max_depth=*/20u, rng);
   scene.upload_geometry();
   scene.upload_points(tracer.points());
   scene.upload_beams(tracer.beams());
@@ -139,6 +147,7 @@ int main(int argc, char **argv) {
   Shader geomShader  ("shaders/geom.vs",   "shaders/geom.fs");
   Shader splatShader ("shaders/splat.vs",  "shaders/splat.gs", "shaders/splat.fs");
   Shader shadowShader("shaders/shadow.vs", "shaders/shadow.gs", "shaders/shadow.fs");
+  Shader hdrShader   ("shaders/hdr.vs",    "shaders/hdr.fs");
 
   // --- Point light shadow map (depth cubemap, rendered once since scene is static) ---
   const int   SHADOW_RES = 1024;
@@ -217,7 +226,9 @@ int main(int argc, char **argv) {
 
     const ViewState& vs = debugUi->viewState();
 
-    // Depth AOV uses a white background so far-away geometry reads as white.
+    // Render all scene passes into the HDR FBO (linear float16 accumulation).
+    glBindFramebuffer(GL_FRAMEBUFFER, hdrFbo);
+
     const bool depthMode = vs.showGeometry && vs.geomAov == ViewState::GeomAov::Depth;
     glClearColor(depthMode ? 1.0f : 0.05f,
                  depthMode ? 1.0f : 0.05f,
@@ -291,6 +302,20 @@ int main(int argc, char **argv) {
         sPrevLeftDown = leftDown;
     }
 
+    // Blit HDR buffer to the default framebuffer.
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+    hdrShader.use();
+    hdrShader.setInt("hdrTex", 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, hdrColorTex);
+    glBindVertexArray(screenVao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glEnable(GL_DEPTH_TEST);
+
     const uint32_t instance_count = rayModel.instance_count();
     const uint32_t medium_count   = scene.medium_count();
     if (debugUi->draw(camera, vsyncEnabled, instance_count, medium_count,
@@ -342,12 +367,39 @@ void processInput(GLFWwindow *window, bool uiWantsMouse,
 // glfw: whenever the window size changed (by OS or user resize) this callback
 // function executes
 // ---------------------------------------------------------------------------------------------
+void recreateHdrFbo(int width, int height) {
+  if (hdrFbo) {
+    glDeleteFramebuffers(1, &hdrFbo);
+    glDeleteTextures(1, &hdrColorTex);
+    glDeleteRenderbuffers(1, &hdrDepthRbo);
+  }
+  glGenFramebuffers(1, &hdrFbo);
+  glGenTextures(1, &hdrColorTex);
+  glGenRenderbuffers(1, &hdrDepthRbo);
+
+  glBindTexture(GL_TEXTURE_2D, hdrColorTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  glBindRenderbuffer(GL_RENDERBUFFER, hdrDepthRbo);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+  glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+  glBindFramebuffer(GL_FRAMEBUFFER, hdrFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdrColorTex, 0);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, hdrDepthRbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   framebufferWidth = width;
   framebufferHeight = height;
-  // make sure the viewport matches the new window dimensions; note that width
-  // and height will be significantly larger than specified on retina displays.
   glViewport(0, 0, width, height);
+  recreateHdrFbo(width, height);
 }
 
 void setMouseLook(GLFWwindow *window, bool enabled) {
