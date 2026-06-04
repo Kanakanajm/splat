@@ -3,3 +3,4 @@ build
 .codex
 .vscode
 imgui.ini
+*.exr
