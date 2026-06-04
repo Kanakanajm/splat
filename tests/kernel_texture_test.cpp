@@ -5,7 +5,7 @@
 
 #include <cmath>
 
-TEST_CASE("kernel_texture: peak at center equals 2/π", "[kernel]") {
+TEST_CASE("kernel_texture: peak at center equals 2/π", "[.kernel]") {
     const auto data = build_kernel_texture(64);
     // Centre texel: row=31, col=31 (0-indexed, texel centre at (31.5/64, 31.5/64)).
     // r = 2 * |0.5078 − 0.5| ≈ 0.016 → k ≈ (2/π)(1−0.016²) ≈ 2/π.
@@ -22,7 +22,7 @@ TEST_CASE("kernel_texture: peak at center equals 2/π", "[kernel]") {
     REQUIRE(data[31 * 64 + 31] == Catch::Approx(kPeak).epsilon(0.01f));
 }
 
-TEST_CASE("kernel_texture: zero outside kernel support", "[kernel]") {
+TEST_CASE("kernel_texture: zero outside kernel support", "[.kernel]") {
     const auto data = build_kernel_texture(64);
     // Corners have r = 2*sqrt(0.5²+0.5²) = sqrt(2) > 1 → must be 0.
     REQUIRE(data[0]            == 0.0f);
@@ -31,12 +31,12 @@ TEST_CASE("kernel_texture: zero outside kernel support", "[kernel]") {
     REQUIRE(data[63 * 64 + 63] == 0.0f);
 }
 
-TEST_CASE("kernel_texture: all values non-negative", "[kernel]") {
+TEST_CASE("kernel_texture: all values non-negative", "[.kernel]") {
     const auto data = build_kernel_texture(64);
     for (float v : data) REQUIRE(v >= 0.0f);
 }
 
-TEST_CASE("kernel_texture: UV-space area integral equals 1/4", "[kernel]") {
+TEST_CASE("kernel_texture: UV-space area integral equals 1/4", "[.kernel]") {
     // ∫₀¹∫₀¹ k(UV) du dv = 1/4 for the 2D Epanechnikov kernel with r=2|UV−0.5|.
     // Discrete approximation: Σ k[i,j] / size² ≈ 0.25.
     constexpr int kSize = 64;
