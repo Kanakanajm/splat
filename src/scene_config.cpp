@@ -93,21 +93,27 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
         }
     }
 
-    // --- light / env_light ---------------------------------------------------
-    if (!doc.contains("light") && !doc.contains("env_light"))
-        throw std::runtime_error("SceneConfig: missing 'light' or 'env_light' block");
+    // --- light / lights / env_light ------------------------------------------
+    if (!doc.contains("light") && !doc.contains("lights") && !doc.contains("env_light"))
+        throw std::runtime_error("SceneConfig: missing 'light', 'lights', or 'env_light' block");
 
-    if (doc.contains("light")) {
-        cfg.has_point_light_ = true;
-        const auto& l = doc["light"];
-        cfg.light_pos_   = parse_vec3(l.at("position"));
-        if (l.contains("power")) cfg.light_power_ = parse_vec3(l["power"]);
-
+    auto parse_point_light = [&](const auto& l, const std::string& ctx) {
+        SceneConfig::PointLightCfg pl;
+        pl.pos   = parse_vec3(l.at("position"));
+        if (l.contains("power"))  pl.power  = parse_vec3(l["power"]);
         if (l.contains("medium")) {
-            cfg.light_medium_ = l["medium"].get<std::string>();
-            require_medium(cfg.light_medium_, "light");
+            pl.medium = l["medium"].template get<std::string>();
+            require_medium(pl.medium, ctx);
         }
-    }
+        cfg.point_lights_.push_back(std::move(pl));
+    };
+
+    if (doc.contains("light"))
+        parse_point_light(doc["light"], "light");
+
+    if (doc.contains("lights"))
+        for (size_t i = 0; i < doc["lights"].size(); ++i)
+            parse_point_light(doc["lights"][i], "lights[" + std::to_string(i) + "]");
 
     if (doc.contains("env_light")) {
         EnvLightCfg ec;
@@ -162,9 +168,9 @@ std::vector<Light> SceneConfig::apply(Scene& scene) const {
 
     std::vector<Light> lights;
 
-    if (has_point_light_) {
-        const uint32_t light_mid = resolve_medium(light_medium_);
-        lights.push_back(PointLight{light_pos_, light_power_, light_mid});
+    for (const auto& pl : point_lights_) {
+        const uint32_t light_mid = resolve_medium(pl.medium);
+        lights.push_back(PointLight{pl.pos, pl.power, light_mid});
     }
 
     if (env_light_) {

@@ -41,9 +41,11 @@ private:
     std::unordered_map<std::string, BsdfCfg>     bsdfs_;
     std::unordered_map<std::string, MediumCfg>   mediums_;
     std::unordered_map<std::string, InstanceCfg>  instances_;
-    bool                          has_point_light_ = false;
-    tinybvh::bvhvec3              light_pos_{};
-    tinybvh::bvhvec3              light_power_ = {1.0f, 1.0f, 1.0f};
-    std::string                   light_medium_;  // empty = vacuum
+    struct PointLightCfg {
+        tinybvh::bvhvec3 pos{};
+        tinybvh::bvhvec3 power = {1.0f, 1.0f, 1.0f};
+        std::string      medium;
+    };
+    std::vector<PointLightCfg>    point_lights_;
     std::optional<EnvLightCfg>    env_light_;
 };

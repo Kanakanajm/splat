@@ -16,6 +16,7 @@ uniform int   aov_mode;
 uniform float maxBounce;
 uniform float maxLength;
 uniform float beamRadius;
+uniform float exposure;
 
 // Camera-side transmittance (depth peel maps)
 uniform sampler2DArray  depthMap;
@@ -109,9 +110,9 @@ void main() {
         } else if (aov_mode == 3) {
             color = heatmap(maxLength > 0.0 ? vLength / maxLength : 0.0);
         } else if (aov_mode == 4) {
-            color = vPower;
+            color = exposure * vPower;
         } else if (aov_mode == 5) {
-            color = vPower * exp(-vSigmaT * vLength);
+            color = exposure * vPower * exp(-vSigmaT * vLength * vT);
         } else {
             color = medium_color(int(vMediumId));
         }
@@ -145,7 +146,7 @@ void main() {
     float sigma_s = (medId >= 0 && medId < MAX_MEDIA) ? mediaSigmaS[medId] : 0.0;
 
     // Beam radiance estimate (Jarosz et al. 2011, eq. 3)
-    vec3 radiance = (k_r * sigma_s * Tr_beam * Tr_cam * INV_4PI / sin_wv) * vPower;
+    vec3 radiance = (exposure * sigma_s * Tr_beam * Tr_cam * INV_4PI / sin_wv) * vPower;
 
     FragColor = vec4(radiance, 1.0);
 }

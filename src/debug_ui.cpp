@@ -147,6 +147,12 @@ void DebugUi::drawPhotonBeamPanel(uint32_t max_bounce) {
     ImGui::SetNextItemWidth(200.0f);
     ImGui::SliderFloat("Beam radius", &state_.beamRadius, 0.001f, 0.5f, "%.3f");
 
+    const int bAov = static_cast<int>(state_.beamAov);
+    if (bAov >= static_cast<int>(ViewState::BeamAov::BeamPowerStart)) {
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::SliderFloat("Exposure", &state_.beamExposure, 0.01f, 100.0f, "%.2f");
+    }
+
     ImGui::Checkbox("All bounces##bm", &state_.allBeamBounces);
     if (!state_.allBeamBounces) {
         state_.beamBounceFilter = std::min(state_.beamBounceFilter, static_cast<int>(max_bounce));
