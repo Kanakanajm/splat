@@ -46,6 +46,7 @@ target_include_directories(SplatApp PRIVATE
     external/imgui
     external/imgui/backends
     external/nlohmann
+    external/tinyexr
 )
 
 target_link_libraries(SplatApp PRIVATE glfw glm::glm assimp::assimp)
