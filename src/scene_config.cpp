@@ -95,9 +95,8 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
         throw std::runtime_error("SceneConfig: missing required 'light' block");
 
     const auto& l = doc["light"];
-    cfg.light_pos_   = parse_vec3(l.at("position"));
-    if (l.contains("power")) cfg.light_power_ = parse_vec3(l["power"]);
-
+    cfg.light_pos_      = parse_vec3(l.at("position"));
+    if (l.contains("power"))    cfg.light_power_    = parse_vec3(l["power"]);
     if (l.contains("medium")) {
         cfg.light_medium_ = l["medium"].get<std::string>();
         require_medium(cfg.light_medium_, "light");

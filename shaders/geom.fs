@@ -11,7 +11,19 @@ uniform vec3  lightPos;
 uniform float nearPlane;
 uniform float farPlane;
 
+uniform samplerCube shadowMap;
+uniform float       shadowFarPlane;
+uniform bool        useShadow;
+
 out vec4 FragColor;
+
+float shadowFactor(vec3 fragPos) {
+    vec3  fragToLight  = fragPos - lightPos;
+    float closestDepth = texture(shadowMap, fragToLight).r * shadowFarPlane;
+    float currentDepth = length(fragToLight);
+    float bias = 0.05;
+    return currentDepth - bias > closestDepth ? 0.0 : 1.0;
+}
 
 vec3 instance_color(int id) {
     vec3 palette[6] = vec3[6](
@@ -31,8 +43,9 @@ void main() {
     if (aov_mode == 1) {
         // Diffuse: Lambertian shading with the BSDF's own color as albedo (no specular, no ambient)
         vec3 L = normalize(lightPos - vFragPos);
-        float diff = max(dot(N, L), 0.0);
-        FragColor = vec4(bsdfColor * diff, 1.0);
+        float diff   = max(dot(N, L), 0.0);
+        float shadow = useShadow ? shadowFactor(vFragPos) : 1.0;
+        FragColor = vec4(bsdfColor * diff * shadow, 1.0);
     } else if (aov_mode == 2) {
         // Normal: map [-1,1] to [0,1] as RGB
         FragColor = vec4(N * 0.5 + 0.5, 1.0);

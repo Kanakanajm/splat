@@ -9,6 +9,7 @@ add_executable(SplatTests
     scene_test.cpp
     bsdf_test.cpp
     scene_config_test.cpp
+    kernel_texture_test.cpp
     ${CMAKE_SOURCE_DIR}/src/ray_model.cpp
     ${CMAKE_SOURCE_DIR}/src/tiny_bvh.cpp
     ${CMAKE_SOURCE_DIR}/src/ray_camera.cpp
@@ -20,6 +21,7 @@ add_executable(SplatTests
     ${CMAKE_SOURCE_DIR}/src/bsdf.cpp
     ${CMAKE_SOURCE_DIR}/src/scene_config.cpp
     ${CMAKE_SOURCE_DIR}/src/json.cpp
+    ${CMAKE_SOURCE_DIR}/src/kernel_texture.cpp
 )
 
 target_include_directories(SplatTests PRIVATE

@@ -37,5 +37,5 @@ private:
     std::unordered_map<std::string, InstanceCfg>  instances_;
     tinybvh::bvhvec3 light_pos_{};
     tinybvh::bvhvec3 light_power_ = {1.0f, 1.0f, 1.0f};
-    std::string      light_medium_;  // empty = vacuum
+    std::string      light_medium_;       // empty = vacuum
 };

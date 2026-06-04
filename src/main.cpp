@@ -32,10 +32,9 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard);
-// callback when mouseLookEnabled changes
 void setMouseLook(GLFWwindow *window, bool enabled);
-// set the shared camera matrices on any shader (identity model)
 void setCameraUniforms(Shader &shader, const glm::mat4 &projection, const glm::mat4 &view);
+void recreateHdrFbo(int width, int height);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -52,8 +51,11 @@ bool mouseLookEnabled = false;
 bool uiWantsMouse = false;
 
 // timing
-float deltaTime = 0.0f; // time between current frame and last frame
+float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+
+// HDR FBO for linear-space accumulation
+unsigned int hdrFbo = 0, hdrColorTex = 0, hdrDepthRbo = 0;
 
 int main(int argc, char **argv) {
   // glfw init check
@@ -65,6 +67,7 @@ int main(int argc, char **argv) {
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_STENCIL_BITS, 8);
 
   GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT,
                                         "Photon Splatter", nullptr, nullptr);
@@ -91,27 +94,35 @@ int main(int argc, char **argv) {
   
   bool vsyncEnabled = true;
   glfwSwapInterval(vsyncEnabled ? 1 : 0);
-  
+
   // retrieve framebuffer size
   glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
 
-  // set view port with the whole frame buffer
   glViewport(0, 0, framebufferWidth, framebufferHeight);
 
-  // opengl will discard fragments that failed depth test
+  // HDR FBO: accumulate radiance in linear float16 space.
+  recreateHdrFbo(framebufferWidth, framebufferHeight);
+
+  // Empty VAO for the fullscreen triangle draw (no attributes, positions
+  // are generated from gl_VertexID in hdr.vs).
+  unsigned int screenVao = 0;
+  glGenVertexArrays(1, &screenVao);
+
   glEnable(GL_DEPTH_TEST);
   // let the vertex shader control point size via gl_PointSize
   glEnable(GL_PROGRAM_POINT_SIZE);
 
   // --- Photon scene setup ---------------------------------------------------
   if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <scene.obj>\n";
+    std::cerr << "Usage: " << argv[0] << " <scene.obj> [photon_count]\n";
     glfwDestroyWindow(window);
     glfwTerminate();
     return -1;
   }
 
   const std::string scenePath(argv[1]);
+  const uint32_t photonCount = argc >= 3 ? static_cast<uint32_t>(std::stoul(argv[2])) : 30000u;
+
   RayModel rayModel(scenePath);
   std::cout << "Scene: " << scenePath << " (" << rayModel.instance_count() << " instances)\n";
 
@@ -123,16 +134,69 @@ int main(int argc, char **argv) {
 
   PhotonTracer tracer(scene, bvh, light);
   Rng rng(0xDECAFu);
-  tracer.trace(/*photon_count=*/30000u, /*max_depth=*/64u, rng);
+  tracer.trace(photonCount, /*max_depth=*/20u, rng);
   scene.upload_geometry();
   scene.upload_points(tracer.points());
   scene.upload_beams(tracer.beams());
+  scene.upload_splats(tracer.points());
   std::cout << "Traced " << tracer.points().size() << " points, " << tracer.beams().size()
             << " beams" << std::endl;
 
-  Shader pointShader("shaders/point.vs", "shaders/point.fs");
-  Shader beamShader ("shaders/beam.vs",  "shaders/beam.fs");
-  Shader geomShader ("shaders/geom.vs",  "shaders/geom.fs");
+  Shader pointShader ("shaders/point.vs",  "shaders/point.fs");
+  Shader beamShader  ("shaders/beam.vs",   "shaders/beam.fs");
+  Shader geomShader  ("shaders/geom.vs",   "shaders/geom.fs");
+  Shader splatShader ("shaders/splat.vs",  "shaders/splat.gs", "shaders/splat.fs");
+  Shader shadowShader("shaders/shadow.vs", "shaders/shadow.gs", "shaders/shadow.fs");
+  Shader hdrShader   ("shaders/hdr.vs",    "shaders/hdr.fs");
+
+  // --- Point light shadow map (depth cubemap, rendered once since scene is static) ---
+  const int   SHADOW_RES = 1024;
+  const float SHADOW_FAR = 25.0f;
+  unsigned int shadowFBO = 0, depthCubemap = 0;
+  {
+    glGenTextures(1, &depthCubemap);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubemap);
+    for (int i = 0; i < 6; ++i)
+      glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_DEPTH_COMPONENT,
+                   SHADOW_RES, SHADOW_RES, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    glGenFramebuffers(1, &shadowFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthCubemap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  }
+  {
+    const glm::vec3 lp(light.position.x, light.position.y, light.position.z);
+    const glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, SHADOW_FAR);
+    const glm::mat4 shadowMatrices[6] = {
+      shadowProj * glm::lookAt(lp, lp + glm::vec3( 1, 0, 0), glm::vec3(0,-1, 0)),
+      shadowProj * glm::lookAt(lp, lp + glm::vec3(-1, 0, 0), glm::vec3(0,-1, 0)),
+      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0, 1, 0), glm::vec3(0, 0, 1)),
+      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0,-1, 0), glm::vec3(0, 0,-1)),
+      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0, 0, 1), glm::vec3(0,-1, 0)),
+      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0, 0,-1), glm::vec3(0,-1, 0)),
+    };
+
+    glViewport(0, 0, SHADOW_RES, SHADOW_RES);
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    shadowShader.use();
+    for (int i = 0; i < 6; ++i)
+      shadowShader.setMat4("shadowMatrices[" + std::to_string(i) + "]", shadowMatrices[i]);
+    shadowShader.setVec3("lightPos", light.position.x, light.position.y, light.position.z);
+    shadowShader.setFloat("farPlane", SHADOW_FAR);
+    shadowShader.setMat4("model", glm::mat4(1.0f));
+    scene.draw_geometry(shadowShader, /*aov_mode=*/1, {});
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, framebufferWidth, framebufferHeight);
+  }
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
@@ -162,12 +226,14 @@ int main(int argc, char **argv) {
 
     const ViewState& vs = debugUi->viewState();
 
-    // Depth AOV uses a white background so far-away geometry reads as white.
+    // Render all scene passes into the HDR FBO (linear float16 accumulation).
+    glBindFramebuffer(GL_FRAMEBUFFER, hdrFbo);
+
     const bool depthMode = vs.showGeometry && vs.geomAov == ViewState::GeomAov::Depth;
     glClearColor(depthMode ? 1.0f : 0.05f,
                  depthMode ? 1.0f : 0.05f,
                  depthMode ? 1.0f : 0.08f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     // --- Geometry pass
     if (vs.showGeometry) {
@@ -178,7 +244,26 @@ int main(int argc, char **argv) {
       geomShader.setVec3("lightPos", light.position.x, light.position.y, light.position.z);
       geomShader.setFloat("nearPlane", 0.1f);
       geomShader.setFloat("farPlane", 10.0f);
+      geomShader.setInt("shadowMap", 1);
+      geomShader.setFloat("shadowFarPlane", SHADOW_FAR);
+      geomShader.setBool("useShadow", vs.useShadow);
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubemap);
       scene.draw_geometry(geomShader, geomAov, vs.instanceVisible);
+    }
+
+    // --- Depth prepass (when geometry is hidden but splat needs a filled depth buffer)
+    if (vs.showSplat && !vs.showGeometry) {
+      glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+      setCameraUniforms(geomShader, projection, view);
+      scene.draw_geometry(geomShader, /*aov_mode=*/1, vs.instanceVisible);
+      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    }
+
+    // --- Splat pass (after geometry so depth buffer is populated)
+    if (vs.showSplat) {
+      setCameraUniforms(splatShader, projection, view);
+      scene.draw_splats(splatShader, vs.splatH, vs.exposure, static_cast<int>(vs.splatAov));
     }
 
     // --- Photon point pass
@@ -216,6 +301,20 @@ int main(int argc, char **argv) {
         }
         sPrevLeftDown = leftDown;
     }
+
+    // Blit HDR buffer to the default framebuffer.
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+    hdrShader.use();
+    hdrShader.setInt("hdrTex", 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, hdrColorTex);
+    glBindVertexArray(screenVao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glEnable(GL_DEPTH_TEST);
 
     const uint32_t instance_count = rayModel.instance_count();
     const uint32_t medium_count   = scene.medium_count();
@@ -268,12 +367,39 @@ void processInput(GLFWwindow *window, bool uiWantsMouse,
 // glfw: whenever the window size changed (by OS or user resize) this callback
 // function executes
 // ---------------------------------------------------------------------------------------------
+void recreateHdrFbo(int width, int height) {
+  if (hdrFbo) {
+    glDeleteFramebuffers(1, &hdrFbo);
+    glDeleteTextures(1, &hdrColorTex);
+    glDeleteRenderbuffers(1, &hdrDepthRbo);
+  }
+  glGenFramebuffers(1, &hdrFbo);
+  glGenTextures(1, &hdrColorTex);
+  glGenRenderbuffers(1, &hdrDepthRbo);
+
+  glBindTexture(GL_TEXTURE_2D, hdrColorTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  glBindRenderbuffer(GL_RENDERBUFFER, hdrDepthRbo);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+  glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+  glBindFramebuffer(GL_FRAMEBUFFER, hdrFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdrColorTex, 0);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, hdrDepthRbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   framebufferWidth = width;
   framebufferHeight = height;
-  // make sure the viewport matches the new window dimensions; note that width
-  // and height will be significantly larger than specified on retina displays.
   glViewport(0, 0, width, height);
+  recreateHdrFbo(width, height);
 }
 
 void setMouseLook(GLFWwindow *window, bool enabled) {

@@ -21,4 +21,5 @@
 | Savepoint | Branch | Summary |
 |---|---|---|
 | Opacity pass | `opacity` | Frustum slicing / depth peeling for camera-side attenuation maps. See `docs/project/opacity.md`. |
-| Splat pass | `splat` | Rasterize beams as billboard quads. See `docs/project/splat.md`. |
+| [splat_v1_status.md](splat_v1_status.md) | `surface-splat` | Kernel-weighted surface photon splatting via GS pipeline. See `docs/project/splat.md` § V1. |
+| [splat_v15_status.md](splat_v15_status.md) | `surface-splat` | V1.5 fixes: instancing reverted, stencil surface-bleeding mask, point-light shadow cubemap in diffuse AOV. |

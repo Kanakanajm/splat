@@ -25,6 +25,7 @@ add_executable(SplatApp
     src/scene_gl.cpp
     src/scene_config.cpp
     src/bsdf.cpp
+    src/kernel_texture.cpp
     src/mesh.cpp
     src/model.cpp
     external/glad/src/glad.c

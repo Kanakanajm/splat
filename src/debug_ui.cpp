@@ -68,6 +68,7 @@ void DebugUi::drawGeometryPanel() {
     ImGui::RadioButton("Depth",    &g, static_cast<int>(ViewState::GeomAov::Depth));   ImGui::SameLine();
     ImGui::RadioButton("Backface", &g, static_cast<int>(ViewState::GeomAov::Backface));
     state_.geomAov = static_cast<ViewState::GeomAov>(g);
+    ImGui::Checkbox("Shadow", &state_.useShadow);
 
     if (!state_.instanceVisible.empty()) {
         ImGui::Text("Instances:");
@@ -82,6 +83,24 @@ void DebugUi::drawGeometryPanel() {
         }
         ImGui::NewLine();
     }
+}
+
+void DebugUi::drawSplatPanel() {
+    if (!ImGui::CollapsingHeader("Splat Pass")) return;
+    ImGui::Checkbox("Show splat", &state_.showSplat);
+    if (!state_.showSplat) return;
+    ImGui::TextDisabled("Requires geometry pass to populate depth buffer.");
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SliderFloat("h (bandwidth)", &state_.splatH, 0.001f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SliderFloat("Exposure", &state_.exposure, 0.01f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    ImGui::Text("AOV:");
+    ImGui::SameLine();
+    int s = static_cast<int>(state_.splatAov);
+    ImGui::RadioButton("Radiance",  &s, static_cast<int>(ViewState::SplatAov::Radiance));  ImGui::SameLine();
+    ImGui::RadioButton("Wireframe", &s, static_cast<int>(ViewState::SplatAov::Wireframe)); ImGui::SameLine();
+    ImGui::RadioButton("Normal",    &s, static_cast<int>(ViewState::SplatAov::Normal));
+    state_.splatAov = static_cast<ViewState::SplatAov>(s);
 }
 
 void DebugUi::drawPhotonPointPanel(uint32_t max_bounce) {
@@ -206,6 +225,7 @@ bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
     ImGui::Separator();
 
     drawGeometryPanel();
+    drawSplatPanel();
     drawPhotonPointPanel(max_bounce);
     drawPhotonBeamPanel(beam_max_bounce);
 
