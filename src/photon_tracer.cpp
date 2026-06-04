@@ -24,14 +24,15 @@ float max_component(const tinybvh::bvhvec3& v) {
 
 }  // namespace
 
-void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
+void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
+                         uint32_t norm_count) {
     points_.clear();
     beams_.clear();
     points_.reserve(photon_count);
 
     constexpr float kEps = 1e-4f;  // ray-origin offset to escape the interaction point
 
-    const float n = static_cast<float>(photon_count);
+    const float n = static_cast<float>(norm_count > 0 ? norm_count : photon_count);
     const tinybvh::bvhvec3 init_weight = light_.power;
 
     for (uint32_t i = 0; i < photon_count; ++i) {
@@ -93,7 +94,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
             const Bsdf&    bsdf    = scene_.bsdf(bsdf_id);
             if (bsdf.kind == BsdfKind::Diffuse && depth > 0) {
                 points_.push_back({p, oriented_n, ray.D,
-                                   bsdf_id, scene_.model().instance_id(prim), depth, weight/photon_count});
+                                   bsdf_id, scene_.model().instance_id(prim), depth, weight/n});
             }
 
             // Russian roulette: base prr on material albedo so survival rate is

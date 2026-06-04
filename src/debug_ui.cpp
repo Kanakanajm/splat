@@ -3,6 +3,7 @@
 #include "camera.hpp"
 
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <cstdio>
 #include <iostream>
 #include <iomanip>
@@ -187,6 +188,29 @@ void DebugUi::drawPhotonBeamPanel(uint32_t max_bounce) {
     }
 }
 
+void DebugUi::drawCapturePanel() {
+    if (!ImGui::CollapsingHeader("Capture")) return;
+
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputInt("Total photons",     &capture_.total_photons);
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputInt("Photons per pass",  &capture_.photons_per_pass);
+    ImGui::SetNextItemWidth(240.0f);
+    ImGui::InputText("Output path", capture_.output_path, sizeof(capture_.output_path));
+
+    if (capture_.is_running) {
+        ImGui::BeginDisabled();
+        ImGui::Button("Rendering...");
+        ImGui::EndDisabled();
+    } else {
+        if (ImGui::Button("Render")) {
+            capture_.total_photons    = std::max(1, capture_.total_photons);
+            capture_.photons_per_pass = std::max(1, capture_.photons_per_pass);
+            capture_.triggered        = true;
+        }
+    }
+}
+
 // ---- main draw --------------------------------------------------------------
 
 bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
@@ -228,6 +252,7 @@ bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
     drawSplatPanel();
     drawPhotonPointPanel(max_bounce);
     drawPhotonBeamPanel(beam_max_bounce);
+    drawCapturePanel();
 
     ImGui::Separator();
     ImGui::Checkbox("ImGui demo", &showDemoWindow_);
