@@ -20,6 +20,8 @@
 #include "random.hpp"
 #include "tiny_bvh.h"
 
+#include "tinyexr.h"
+
 #include <algorithm>
 #include <iostream>
 #include <limits>
@@ -35,6 +37,7 @@ void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard);
 void setMouseLook(GLFWwindow *window, bool enabled);
 void setCameraUniforms(Shader &shader, const glm::mat4 &projection, const glm::mat4 &view);
 void recreateHdrFbo(int width, int height);
+void recreateAccumFbo(int width, int height);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -56,6 +59,9 @@ float lastFrame = 0.0f;
 
 // HDR FBO for linear-space accumulation
 unsigned int hdrFbo = 0, hdrColorTex = 0, hdrDepthRbo = 0;
+
+// Accumulation FBO for multi-pass capture (GL_RGBA32F)
+unsigned int accumFbo = 0, accumColorTex = 0, accumDepthRbo = 0;
 
 int main(int argc, char **argv) {
   // glfw init check
@@ -102,6 +108,7 @@ int main(int argc, char **argv) {
 
   // HDR FBO: accumulate radiance in linear float16 space.
   recreateHdrFbo(framebufferWidth, framebufferHeight);
+  recreateAccumFbo(framebufferWidth, framebufferHeight);
 
   // Empty VAO for the fullscreen triangle draw (no attributes, positions
   // are generated from gl_VertexID in hdr.vs).
@@ -225,6 +232,70 @@ int main(int argc, char **argv) {
     const glm::mat4 view = camera.GetViewMatrix();
 
     const ViewState& vs = debugUi->viewState();
+
+    // --- Multi-pass capture (triggered by "Render" button in debug UI) --------
+    CaptureState& cs = debugUi->captureState();
+    if (cs.triggered && !cs.is_running) {
+      cs.triggered  = false;
+      cs.is_running = true;
+
+      const uint32_t N_total    = static_cast<uint32_t>(cs.total_photons);
+      const uint32_t N_per_pass = static_cast<uint32_t>(cs.photons_per_pass);
+      const uint32_t K          = (N_total + N_per_pass - 1) / N_per_pass;
+
+      glBindFramebuffer(GL_FRAMEBUFFER, accumFbo);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+      // Depth prepass: fill accumFbo depth buffer from geometry (once, camera is fixed).
+      glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+      setCameraUniforms(geomShader, projection, view);
+      scene.draw_geometry(geomShader, /*aov_mode=*/1, vs.instanceVisible);
+      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+      for (uint32_t pass = 0; pass < K; ++pass) {
+        Rng pass_rng(0xDECAFu + pass);
+        tracer.trace(N_per_pass, /*max_depth=*/20u, pass_rng, N_total);
+        scene.upload_splats(tracer.points());
+        tracer.release_cpu_memory();
+        setCameraUniforms(splatShader, projection, view);
+        scene.draw_splats(splatShader, vs.splatH, /*exposure=*/1.0f, /*aov=*/0);
+        glFinish();  // drain GPU queue so driver can free the previous pass's VBO
+        std::cout << "Capture pass " << (pass + 1) << "/" << K << "\n";
+      }
+
+      // Readback accumulated radiance, flip Y (GL origin is bottom-left), strip alpha.
+      const int W = framebufferWidth, H = framebufferHeight;
+      std::vector<float> raw(W * H * 4);
+      glReadPixels(0, 0, W, H, GL_RGBA, GL_FLOAT, raw.data());
+
+      std::vector<float> rgb(W * H * 3);
+      for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+          const int src = ((H - 1 - y) * W + x) * 4;
+          const int dst = (y * W + x) * 3;
+          rgb[dst + 0] = raw[src + 0];
+          rgb[dst + 1] = raw[src + 1];
+          rgb[dst + 2] = raw[src + 2];
+        }
+      }
+
+      const char* exrErr = nullptr;
+      if (SaveEXR(rgb.data(), W, H, 3, /*fp16=*/0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
+        std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+        FreeEXRErrorMessage(exrErr);
+      } else {
+        std::cout << "Saved: " << cs.output_path << "\n";
+      }
+
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+      // Restore interactive splats with the original photon count.
+      Rng restore_rng(0xDECAFu);
+      tracer.trace(photonCount, /*max_depth=*/20u, restore_rng);
+      scene.upload_splats(tracer.points());
+
+      cs.is_running = false;
+    }
 
     // Render all scene passes into the HDR FBO (linear float16 accumulation).
     glBindFramebuffer(GL_FRAMEBUFFER, hdrFbo);
@@ -395,11 +466,40 @@ void recreateHdrFbo(int width, int height) {
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+void recreateAccumFbo(int width, int height) {
+  if (accumFbo) {
+    glDeleteFramebuffers(1, &accumFbo);
+    glDeleteTextures(1, &accumColorTex);
+    glDeleteRenderbuffers(1, &accumDepthRbo);
+  }
+  glGenFramebuffers(1, &accumFbo);
+  glGenTextures(1, &accumColorTex);
+  glGenRenderbuffers(1, &accumDepthRbo);
+
+  glBindTexture(GL_TEXTURE_2D, accumColorTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  glBindRenderbuffer(GL_RENDERBUFFER, accumDepthRbo);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+  glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+  glBindFramebuffer(GL_FRAMEBUFFER, accumFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, accumColorTex, 0);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, accumDepthRbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   framebufferWidth = width;
   framebufferHeight = height;
   glViewport(0, 0, width, height);
   recreateHdrFbo(width, height);
+  recreateAccumFbo(width, height);
 }
 
 void setMouseLook(GLFWwindow *window, bool enabled) {

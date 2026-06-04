@@ -6,6 +6,14 @@
 class Camera;
 struct GLFWwindow;
 
+struct CaptureState {
+    int  total_photons    = 1000000;
+    int  photons_per_pass = 100000;
+    char output_path[256] = "output.exr";
+    bool is_running       = false;
+    bool triggered        = false;
+};
+
 struct ViewState {
     // --- Geometry ------------------------------------------------------------
     bool showGeometry = false;
@@ -60,14 +68,17 @@ public:
 
     void pick(float r, float g, float b);
 
-    const ViewState& viewState() const { return state_; }
+    const ViewState& viewState()  const { return state_; }
+    CaptureState&    captureState()     { return capture_; }
 
 private:
     void drawGeometryPanel();
     void drawPhotonPointPanel(uint32_t max_bounce);
     void drawPhotonBeamPanel(uint32_t max_bounce);
     void drawSplatPanel();
+    void drawCapturePanel();
 
-    ViewState state_;
+    ViewState    state_;
+    CaptureState capture_;
     bool showDemoWindow_ = false;
 };

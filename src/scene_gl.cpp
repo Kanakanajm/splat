@@ -344,7 +344,7 @@ void upload_splats_vbo(unsigned int& vao, unsigned int& vbo, const std::vector<f
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(data.size() * sizeof(float)),
-                 data.data(), GL_STATIC_DRAW);
+                 data.data(), GL_STREAM_DRAW);
     constexpr GLsizei stride = 15 * sizeof(float);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
