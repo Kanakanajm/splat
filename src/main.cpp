@@ -20,6 +20,8 @@
 #include "random.hpp"
 #include "tiny_bvh.h"
 
+#include "tinyexr.h"
+
 #include <algorithm>
 #include <iostream>
 #include <limits>
@@ -32,10 +34,10 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window, bool uiWantsMouse, bool uiWantsKeyboard);
-// callback when mouseLookEnabled changes
 void setMouseLook(GLFWwindow *window, bool enabled);
-// set the shared camera matrices on any shader (identity model)
 void setCameraUniforms(Shader &shader, const glm::mat4 &projection, const glm::mat4 &view);
+void recreateHdrFbo(int width, int height);
+void recreateAccumFbo(int width, int height);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -52,8 +54,14 @@ bool mouseLookEnabled = false;
 bool uiWantsMouse = false;
 
 // timing
-float deltaTime = 0.0f; // time between current frame and last frame
+float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+
+// HDR FBO for linear-space accumulation
+unsigned int hdrFbo = 0, hdrColorTex = 0, hdrDepthRbo = 0;
+
+// Accumulation FBO for multi-pass capture (GL_RGBA32F)
+unsigned int accumFbo = 0, accumColorTex = 0, accumDepthRbo = 0;
 
 int main(int argc, char **argv) {
   // glfw init check
@@ -65,6 +73,7 @@ int main(int argc, char **argv) {
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_STENCIL_BITS, 8);
 
   GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT,
                                         "Photon Splatter", nullptr, nullptr);
@@ -91,27 +100,36 @@ int main(int argc, char **argv) {
   
   bool vsyncEnabled = true;
   glfwSwapInterval(vsyncEnabled ? 1 : 0);
-  
+
   // retrieve framebuffer size
   glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
 
-  // set view port with the whole frame buffer
   glViewport(0, 0, framebufferWidth, framebufferHeight);
 
-  // opengl will discard fragments that failed depth test
+  // HDR FBO: accumulate radiance in linear float16 space.
+  recreateHdrFbo(framebufferWidth, framebufferHeight);
+  recreateAccumFbo(framebufferWidth, framebufferHeight);
+
+  // Empty VAO for the fullscreen triangle draw (no attributes, positions
+  // are generated from gl_VertexID in hdr.vs).
+  unsigned int screenVao = 0;
+  glGenVertexArrays(1, &screenVao);
+
   glEnable(GL_DEPTH_TEST);
   // let the vertex shader control point size via gl_PointSize
   glEnable(GL_PROGRAM_POINT_SIZE);
 
   // --- Photon scene setup ---------------------------------------------------
   if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <scene.obj>\n";
+    std::cerr << "Usage: " << argv[0] << " <scene.obj> [photon_count]\n";
     glfwDestroyWindow(window);
     glfwTerminate();
     return -1;
   }
 
   const std::string scenePath(argv[1]);
+  const uint32_t photonCount = argc >= 3 ? static_cast<uint32_t>(std::stoul(argv[2])) : 30000u;
+
   RayModel rayModel(scenePath);
   std::cout << "Scene: " << scenePath << " (" << rayModel.instance_count() << " instances)\n";
 
@@ -123,7 +141,7 @@ int main(int argc, char **argv) {
 
   PhotonTracer tracer(scene, bvh, lights);
   Rng rng(0xDECAFu);
-  tracer.trace(/*photon_count=*/100000u, /*max_depth=*/32u, rng);
+  tracer.trace(photonCount, /*max_depth=*/20u, rng);
   scene.upload_geometry();
   scene.upload_points(tracer.points());
   scene.upload_beams(tracer.beams());
@@ -274,6 +292,96 @@ int main(int argc, char **argv) {
 
     const bool isSplatMode = vs.showBeams && (vs.beamAov == ViewState::BeamAov::Splat);
     const bool depthMode   = vs.showGeometry && vs.geomAov == ViewState::GeomAov::Depth;
+
+    // --- Multi-pass capture (triggered by "Render" button in debug UI) --------
+    CaptureState& cs = debugUi->captureState();
+    if (cs.triggered && !cs.is_running) {
+      cs.triggered  = false;
+      cs.is_running = true;
+
+      const uint32_t N_total    = static_cast<uint32_t>(cs.total_photons);
+      const uint32_t N_per_pass = static_cast<uint32_t>(cs.photons_per_pass);
+      const uint32_t K          = (N_total + N_per_pass - 1) / N_per_pass;
+
+      glBindFramebuffer(GL_FRAMEBUFFER, accumFbo);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      glDisable(GL_DEPTH_TEST);
+
+      for (uint32_t pass = 0; pass < K; ++pass) {
+        Rng pass_rng(0xDECAFu + pass);
+        tracer.trace(N_per_pass, /*max_depth=*/20u, pass_rng, N_total);
+        scene.upload_beams(tracer.beams());
+        tracer.release_cpu_memory();
+
+        constexpr int kMaxMedia = 16;
+        float mediaSigmaT[kMaxMedia] = {};
+        float mediaSigmaS[kMaxMedia] = {};
+        for (uint32_t mi = 0; mi < std::min(scene.medium_count(), static_cast<uint32_t>(kMaxMedia)); ++mi) {
+            mediaSigmaT[mi] = scene.medium(mi).sigma_t();
+            mediaSigmaS[mi] = scene.medium(mi).sigma_s;
+        }
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);
+        setCameraUniforms(beamShader, projection, view);
+        beamShader.setVec3("cameraDir", camera.Front.x, camera.Front.y, camera.Front.z);
+        beamShader.setFloat("beamRadius", vs.beamRadius);
+        beamShader.setFloat("exposure", 1.0f);
+        beamShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+        beamShader.setFloatArray("mediaSigmaS", mediaSigmaS, kMaxMedia);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_depth_array());
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_medium_array());
+        glActiveTexture(GL_TEXTURE0);
+        beamShader.setInt("depthMap", 0);
+        beamShader.setInt("mediumMap", 1);
+        beamShader.setInt("numPeelLayers", peelLayerCount);
+        beamShader.setMat4("invViewProj", invViewProj);
+        beamShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+        beamShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                         static_cast<float>(framebufferHeight));
+        scene.draw_beams(beamShader, static_cast<int>(ViewState::BeamAov::Splat), vs.mediumBeamsVisible);
+        glDisable(GL_BLEND);
+        glFinish();
+        std::cout << "Capture pass " << (pass + 1) << "/" << K << "\n";
+      }
+
+      glEnable(GL_DEPTH_TEST);
+
+      // Readback accumulated radiance, flip Y (GL origin is bottom-left), strip alpha.
+      const int W = framebufferWidth, H = framebufferHeight;
+      std::vector<float> raw(W * H * 4);
+      glBindFramebuffer(GL_FRAMEBUFFER, accumFbo);
+      glReadPixels(0, 0, W, H, GL_RGBA, GL_FLOAT, raw.data());
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+      std::vector<float> rgb(W * H * 3);
+      for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+          const int src = ((H - 1 - y) * W + x) * 4;
+          const int dst = (y * W + x) * 3;
+          rgb[dst + 0] = raw[src + 0];
+          rgb[dst + 1] = raw[src + 1];
+          rgb[dst + 2] = raw[src + 2];
+        }
+      }
+
+      const char* exrErr = nullptr;
+      if (SaveEXR(rgb.data(), W, H, 3, /*fp16=*/0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
+        std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+        FreeEXRErrorMessage(exrErr);
+      } else {
+        std::cout << "Saved: " << cs.output_path << "\n";
+      }
+
+      // Restore interactive beams with the original photon count.
+      Rng restore_rng(0xDECAFu);
+      tracer.trace(photonCount, /*max_depth=*/20u, restore_rng);
+      scene.upload_beams(tracer.beams());
+
+      cs.is_running = false;
+    }
 
     // Default framebuffer clear (splat result is composited later).
     glClearColor(depthMode ? 1.0f : 0.392f,
@@ -516,12 +624,68 @@ void processInput(GLFWwindow *window, bool uiWantsMouse,
 // glfw: whenever the window size changed (by OS or user resize) this callback
 // function executes
 // ---------------------------------------------------------------------------------------------
+void recreateHdrFbo(int width, int height) {
+  if (hdrFbo) {
+    glDeleteFramebuffers(1, &hdrFbo);
+    glDeleteTextures(1, &hdrColorTex);
+    glDeleteRenderbuffers(1, &hdrDepthRbo);
+  }
+  glGenFramebuffers(1, &hdrFbo);
+  glGenTextures(1, &hdrColorTex);
+  glGenRenderbuffers(1, &hdrDepthRbo);
+
+  glBindTexture(GL_TEXTURE_2D, hdrColorTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  glBindRenderbuffer(GL_RENDERBUFFER, hdrDepthRbo);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+  glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+  glBindFramebuffer(GL_FRAMEBUFFER, hdrFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdrColorTex, 0);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, hdrDepthRbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void recreateAccumFbo(int width, int height) {
+  if (accumFbo) {
+    glDeleteFramebuffers(1, &accumFbo);
+    glDeleteTextures(1, &accumColorTex);
+    glDeleteRenderbuffers(1, &accumDepthRbo);
+  }
+  glGenFramebuffers(1, &accumFbo);
+  glGenTextures(1, &accumColorTex);
+  glGenRenderbuffers(1, &accumDepthRbo);
+
+  glBindTexture(GL_TEXTURE_2D, accumColorTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  glBindRenderbuffer(GL_RENDERBUFFER, accumDepthRbo);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+  glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+  glBindFramebuffer(GL_FRAMEBUFFER, accumFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, accumColorTex, 0);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, accumDepthRbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   framebufferWidth = width;
   framebufferHeight = height;
-  // make sure the viewport matches the new window dimensions; note that width
-  // and height will be significantly larger than specified on retina displays.
   glViewport(0, 0, width, height);
+  recreateHdrFbo(width, height);
+  recreateAccumFbo(width, height);
 }
 
 void setMouseLook(GLFWwindow *window, bool enabled) {

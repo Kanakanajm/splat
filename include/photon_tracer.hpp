@@ -27,10 +27,18 @@ public:
     PhotonTracer(const Scene& scene, const tinybvh::BVH& bvh, std::vector<Light> lights)
         : scene_(scene), bvh_(bvh), lights_(std::move(lights)) {}
 
-    void trace(uint32_t photon_count, uint32_t max_depth, Rng& rng);
+    // norm_count overrides the divisor for photon power normalization; use
+    // N_total here when tracing in passes of N_per_pass so accumulated passes sum correctly.
+    void trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
+               uint32_t norm_count = 0);
 
     const std::vector<PhotonPoint>& points() const { return points_; }
     const std::vector<PhotonBeam>&  beams()  const { return beams_;  }
+
+    void release_cpu_memory() {
+        std::vector<PhotonPoint>().swap(points_);
+        std::vector<PhotonBeam>().swap(beams_);
+    }
 
 private:
     const Scene&             scene_;

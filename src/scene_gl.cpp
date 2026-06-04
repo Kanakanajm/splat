@@ -3,6 +3,7 @@
 
 #include "scene.hpp"
 #include "shader.hpp"
+#include "kernel_texture.hpp"
 
 #include <cstdint>
 #include <glad/glad.h>

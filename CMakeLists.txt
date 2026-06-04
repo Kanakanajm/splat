@@ -26,9 +26,12 @@ add_executable(SplatApp
     src/scene_gl.cpp
     src/scene_config.cpp
     src/bsdf.cpp
+    src/kernel_texture.cpp
     src/mesh.cpp
     src/model.cpp
+    src/tinyexr.cpp
     external/glad/src/glad.c
+    external/tinyexr/miniz.c
     external/imgui/imgui.cpp
     external/imgui/imgui_demo.cpp
     external/imgui/imgui_draw.cpp
@@ -46,6 +49,7 @@ target_include_directories(SplatApp PRIVATE
     external/imgui
     external/imgui/backends
     external/nlohmann
+    external/tinyexr
 )
 
 target_link_libraries(SplatApp PRIVATE glfw glm::glm assimp::assimp)

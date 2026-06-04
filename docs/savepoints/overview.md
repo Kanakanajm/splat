@@ -22,4 +22,3 @@
 
 | Savepoint | Branch | Summary |
 |---|---|---|
-| Splat pass | `vol-splat` | Fragment radiance estimate + blending. See `docs/project/splat.md` § TODO 4. |

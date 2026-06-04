@@ -3,6 +3,7 @@
 #include "camera.hpp"
 
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <cstdio>
 #include <iostream>
 #include <iomanip>
@@ -68,6 +69,7 @@ void DebugUi::drawGeometryPanel() {
     ImGui::RadioButton("Depth",    &g, static_cast<int>(ViewState::GeomAov::Depth));   ImGui::SameLine();
     ImGui::RadioButton("Backface", &g, static_cast<int>(ViewState::GeomAov::Backface));
     state_.geomAov = static_cast<ViewState::GeomAov>(g);
+    ImGui::Checkbox("Shadow", &state_.useShadow);
 
     if (!state_.instanceVisible.empty()) {
         ImGui::Text("Instances:");
@@ -82,6 +84,24 @@ void DebugUi::drawGeometryPanel() {
         }
         ImGui::NewLine();
     }
+}
+
+void DebugUi::drawSplatPanel() {
+    if (!ImGui::CollapsingHeader("Splat Pass")) return;
+    ImGui::Checkbox("Show splat", &state_.showSplat);
+    if (!state_.showSplat) return;
+    ImGui::TextDisabled("Requires geometry pass to populate depth buffer.");
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SliderFloat("h (bandwidth)", &state_.splatH, 0.001f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SliderFloat("Exposure", &state_.exposure, 0.01f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    ImGui::Text("AOV:");
+    ImGui::SameLine();
+    int s = static_cast<int>(state_.splatAov);
+    ImGui::RadioButton("Radiance",  &s, static_cast<int>(ViewState::SplatAov::Radiance));  ImGui::SameLine();
+    ImGui::RadioButton("Wireframe", &s, static_cast<int>(ViewState::SplatAov::Wireframe)); ImGui::SameLine();
+    ImGui::RadioButton("Normal",    &s, static_cast<int>(ViewState::SplatAov::Normal));
+    state_.splatAov = static_cast<ViewState::SplatAov>(s);
 }
 
 void DebugUi::drawPhotonPointPanel(uint32_t max_bounce) {
@@ -178,6 +198,29 @@ void DebugUi::drawPhotonBeamPanel(uint32_t max_bounce) {
     }
 }
 
+void DebugUi::drawCapturePanel() {
+    if (!ImGui::CollapsingHeader("Capture")) return;
+
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputInt("Total photons",     &capture_.total_photons);
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputInt("Photons per pass",  &capture_.photons_per_pass);
+    ImGui::SetNextItemWidth(240.0f);
+    ImGui::InputText("Output path", capture_.output_path, sizeof(capture_.output_path));
+
+    if (capture_.is_running) {
+        ImGui::BeginDisabled();
+        ImGui::Button("Rendering...");
+        ImGui::EndDisabled();
+    } else {
+        if (ImGui::Button("Render")) {
+            capture_.total_photons    = std::max(1, capture_.total_photons);
+            capture_.photons_per_pass = std::max(1, capture_.photons_per_pass);
+            capture_.triggered        = true;
+        }
+    }
+}
+
 // ---- main draw --------------------------------------------------------------
 
 bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
@@ -216,8 +259,10 @@ bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
     ImGui::Separator();
 
     drawGeometryPanel();
+    drawSplatPanel();
     drawPhotonPointPanel(max_bounce);
     drawPhotonBeamPanel(beam_max_bounce);
+    drawCapturePanel();
 
     ImGui::Separator();
     ImGui::Checkbox("ImGui demo", &showDemoWindow_);

@@ -24,14 +24,15 @@ float max_component(const tinybvh::bvhvec3& v) {
 
 }  // namespace
 
-void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
+void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
+                         uint32_t norm_count) {
     points_.clear();
     beams_.clear();
     points_.reserve(photon_count);
 
     constexpr float kEps = 1e-4f;  // ray-origin offset to escape the interaction point
 
-    const float n = static_cast<float>(photon_count);
+    const float n = static_cast<float>(norm_count > 0 ? norm_count : photon_count);
 
     // Build CDF over lights weighted by total power (sum of RGB channels).
     // Also accumulate Φ_total for the per-photon weight.
@@ -101,10 +102,17 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
                                      ray.O.y + t_hit * ray.D.y,
                                      ray.O.z + t_hit * ray.D.z};
 
+            const tinybvh::bvhvec3 normal = face_normal(scene_.model(), prim);
+            // Orient toward incident side so dot(incoming_dir, oriented_n) < 0.
+            const float orient = (normal.x*ray.D.x + normal.y*ray.D.y + normal.z*ray.D.z) < 0.0f
+                                     ? 1.0f : -1.0f;
+            const tinybvh::bvhvec3 oriented_n{normal.x*orient, normal.y*orient, normal.z*orient};
+
             const uint32_t bsdf_id = scene_.bsdf_id_at(prim);
             const Bsdf&    bsdf    = scene_.bsdf(bsdf_id);
-            if (bsdf.kind == BsdfKind::Diffuse) {
-                points_.push_back({p, bsdf_id, scene_.model().instance_id(prim), depth, weight/photon_count});
+            if (bsdf.kind == BsdfKind::Diffuse && depth > 0) {
+                points_.push_back({p, oriented_n, ray.D,
+                                   bsdf_id, scene_.model().instance_id(prim), depth, weight/n});
             }
 
             // Russian roulette.
@@ -112,8 +120,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
             // if (rng.uniform() >= prr) break;
             // weight.x /= prr; weight.y /= prr; weight.z /= prr;
 
-            const tinybvh::bvhvec3 normal = face_normal(scene_.model(), prim);
-            const BsdfSample       bs     = bsdf.sample(rng, ray.D, normal);
+            const BsdfSample bs = bsdf.sample(rng, ray.D, normal);
             weight.x *= bs.weight.x; weight.y *= bs.weight.y; weight.z *= bs.weight.z;
 
             // Medium switch on any transmissive event (MediumShell pass-through or
