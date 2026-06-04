@@ -28,7 +28,9 @@ add_executable(SplatApp
     src/kernel_texture.cpp
     src/mesh.cpp
     src/model.cpp
+    src/tinyexr.cpp
     external/glad/src/glad.c
+    external/tinyexr/miniz.c
     external/imgui/imgui.cpp
     external/imgui/imgui_demo.cpp
     external/imgui/imgui_draw.cpp
