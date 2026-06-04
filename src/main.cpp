@@ -304,6 +304,7 @@ int main(int argc, char **argv) {
       const uint32_t K          = (N_total + N_per_pass - 1) / N_per_pass;
 
       glBindFramebuffer(GL_FRAMEBUFFER, accumFbo);
+      glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       glDisable(GL_DEPTH_TEST);
 
