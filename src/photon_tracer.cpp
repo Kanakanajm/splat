@@ -63,9 +63,9 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
                 beams_.push_back({ray.O, scatter, m, depth, weight});
 
                 // Russian roulette.
-                const float prr = std::max(0.05f, std::min(0.95f, max_component(weight)));
-                if (rng.uniform() >= prr) break;
-                weight.x /= prr; weight.y /= prr; weight.z /= prr;
+                // const float prr = std::max(0.05f, std::min(0.95f, max_component(weight)));
+                // if (rng.uniform() >= prr) break;
+                // weight.x /= prr; weight.y /= prr; weight.z /= prr;
 
                 // Single-scatter albedo: σ_s / σ_t.
                 const float albedo = scene_.medium(m).sigma_s / sigma_t;
@@ -98,9 +98,10 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng) {
 
             // Russian roulette: base prr on material albedo so survival rate is
             // independent of absolute photon power (avoids near-zero prr for dim lights).
-            const float prr = std::max(0.01f, std::min(0.99f, max_component(bsdf.color)));
-            if (rng.uniform() >= prr) break;
-            weight.x /= prr; weight.y /= prr; weight.z /= prr;
+            // disable RR for now
+            // const float prr = std::max(0.05f, std::min(0.95f, max_component(weight)));
+            // if (rng.uniform() >= prr) break;
+            // weight.x /= prr; weight.y /= prr; weight.z /= prr;
 
             const BsdfSample bs = bsdf.sample(rng, ray.D, normal);
             weight.x *= bs.weight.x; weight.y *= bs.weight.y; weight.z *= bs.weight.z;
