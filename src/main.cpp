@@ -303,10 +303,79 @@ int main(int argc, char **argv) {
       const uint32_t N_per_pass = static_cast<uint32_t>(cs.photons_per_pass);
       const uint32_t K          = (N_total + N_per_pass - 1) / N_per_pass;
 
+      constexpr int kMaxMedia = 16;
+      float mediaSigmaT[kMaxMedia] = {};
+      float mediaSigmaS[kMaxMedia] = {};
+      for (uint32_t mi = 0; mi < std::min(scene.medium_count(), static_cast<uint32_t>(kMaxMedia)); ++mi) {
+          mediaSigmaT[mi] = scene.medium(mi).sigma_t();
+          mediaSigmaS[mi] = scene.medium(mi).sigma_s;
+      }
+
       glBindFramebuffer(GL_FRAMEBUFFER, accumFbo);
       glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+      // Bind peel textures once — used by background, surface, and beam passes.
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_depth_array());
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_medium_array());
+      glActiveTexture(GL_TEXTURE0);
+
+      // --- 1. Background pass: bgColor * T_cam(cam -> inf), no depth test/write ---
       glDisable(GL_DEPTH_TEST);
+      glDepthMask(GL_FALSE);
+      glDisable(GL_BLEND);
+      quadShader.use();
+      quadShader.setInt("depthMap", 0);
+      quadShader.setInt("mediumMap", 1);
+      quadShader.setInt("numPeelLayers", peelLayerCount);
+      quadShader.setMat4("invViewProj", invViewProj);
+      quadShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      quadShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                       static_cast<float>(framebufferHeight));
+      quadShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+      {
+          glm::vec3 bgColor{0.0f};
+          for (const auto& l : lights)
+              if (const auto* el = std::get_if<EnvLight>(&l))
+                  { bgColor = {el->color.x, el->color.y, el->color.z}; break; }
+          quadShader.setVec3("bgColor", bgColor.x, bgColor.y, bgColor.z);
+      }
+      glBindVertexArray(emptyVAO);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
+      glBindVertexArray(0);
+
+      // --- 2. Opaque surface pass: L_surface * T_cam(cam -> surface), with depth write ---
+      glEnable(GL_DEPTH_TEST);
+      glDepthFunc(GL_LESS);
+      glDepthMask(GL_TRUE);
+      glDisable(GL_BLEND);
+      setCameraUniforms(geomShader, projection, view);
+      geomShader.setInt("aov_mode", 1); // Diffuse
+      geomShader.setVec3("cameraPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      {
+          glm::vec3 lightPos{0.0f};
+          for (const auto& l : lights)
+              if (const auto* pl = std::get_if<PointLight>(&l))
+                  { lightPos = {pl->position.x, pl->position.y, pl->position.z}; break; }
+          geomShader.setVec3("lightPos", lightPos.x, lightPos.y, lightPos.z);
+      }
+      geomShader.setFloat("nearPlane", 0.1f);
+      geomShader.setFloat("farPlane", 10.0f);
+      geomShader.setInt("attenuateMedium", 1);
+      geomShader.setInt("depthMap", 0);
+      geomShader.setInt("mediumMap", 1);
+      geomShader.setInt("numPeelLayers", peelLayerCount);
+      geomShader.setMat4("invViewProj", invViewProj);
+      geomShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      geomShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                       static_cast<float>(framebufferHeight));
+      geomShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+      scene.draw_geometry(geomShader, 1, {}, false);
+
+      // --- 3. Beam passes: additive, depth-tested against opaque surface depth ---
+      glDepthMask(GL_FALSE);
 
       for (uint32_t pass = 0; pass < K; ++pass) {
         Rng pass_rng(0xDECAFu + pass);
@@ -314,27 +383,16 @@ int main(int argc, char **argv) {
         scene.upload_beams(tracer.beams());
         tracer.release_cpu_memory();
 
-        constexpr int kMaxMedia = 16;
-        float mediaSigmaT[kMaxMedia] = {};
-        float mediaSigmaS[kMaxMedia] = {};
-        for (uint32_t mi = 0; mi < std::min(scene.medium_count(), static_cast<uint32_t>(kMaxMedia)); ++mi) {
-            mediaSigmaT[mi] = scene.medium(mi).sigma_t();
-            mediaSigmaS[mi] = scene.medium(mi).sigma_s;
-        }
-
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE);
         setCameraUniforms(beamShader, projection, view);
         beamShader.setVec3("cameraDir", camera.Front.x, camera.Front.y, camera.Front.z);
         beamShader.setFloat("beamRadius", vs.beamRadius);
-        beamShader.setFloat("exposure", 1.0f);
+        beamShader.setFloat("exposure", vs.beamExposure);
         beamShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
         beamShader.setFloatArray("mediaSigmaS", mediaSigmaS, kMaxMedia);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_depth_array());
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_medium_array());
-        glActiveTexture(GL_TEXTURE0);
         beamShader.setInt("depthMap", 0);
         beamShader.setInt("mediumMap", 1);
         beamShader.setInt("numPeelLayers", peelLayerCount);
@@ -348,6 +406,7 @@ int main(int argc, char **argv) {
         std::cout << "Capture pass " << (pass + 1) << "/" << K << "\n";
       }
 
+      glDepthMask(GL_TRUE);
       glEnable(GL_DEPTH_TEST);
 
       // Readback accumulated radiance, flip Y (GL origin is bottom-left), strip alpha.
