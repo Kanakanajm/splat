@@ -38,6 +38,7 @@ void setMouseLook(GLFWwindow *window, bool enabled);
 void setCameraUniforms(Shader &shader, const glm::mat4 &projection, const glm::mat4 &view);
 void recreateHdrFbo(int width, int height);
 void recreateAccumFbo(int width, int height);
+void recreateSplatFbo(int width, int height);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -62,6 +63,12 @@ unsigned int hdrFbo = 0, hdrColorTex = 0, hdrDepthRbo = 0;
 
 // Accumulation FBO for multi-pass capture (GL_RGBA32F)
 unsigned int accumFbo = 0, accumColorTex = 0, accumDepthRbo = 0;
+
+// Splat HDR FBO for interactive splat mode (GL_RGB16F)
+unsigned int splatFbo = 0, splatTex = 0;
+
+// Pointer to scene for depth-peel resize in the framebuffer callback
+Scene* g_scene = nullptr;
 
 int main(int argc, char **argv) {
   // glfw init check
@@ -179,24 +186,9 @@ int main(int argc, char **argv) {
   glGenVertexArrays(1, &emptyVAO);
 
   scene.init_depth_peel(framebufferWidth, framebufferHeight);
+  g_scene = &scene;
 
-  // Linear HDR accumulation buffer for splat mode (GL_RGB16F, no depth needed).
-  unsigned int splatFbo = 0, splatTex = 0;
-  {
-      glGenTextures(1, &splatTex);
-      glBindTexture(GL_TEXTURE_2D, splatTex);
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F,
-                   framebufferWidth, framebufferHeight, 0, GL_RGB, GL_FLOAT, nullptr);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-      glBindTexture(GL_TEXTURE_2D, 0);
-      glGenFramebuffers(1, &splatFbo);
-      glBindFramebuffer(GL_FRAMEBUFFER, splatFbo);
-      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, splatTex, 0);
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  }
+  recreateSplatFbo(framebufferWidth, framebufferHeight);
 
   unsigned int peelQuery;
   glGenQueries(1, &peelQuery);
@@ -740,12 +732,33 @@ void recreateAccumFbo(int width, int height) {
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+void recreateSplatFbo(int width, int height) {
+  if (splatFbo) {
+    glDeleteFramebuffers(1, &splatFbo);
+    glDeleteTextures(1, &splatTex);
+  }
+  glGenTextures(1, &splatTex);
+  glBindTexture(GL_TEXTURE_2D, splatTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glGenFramebuffers(1, &splatFbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, splatFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, splatTex, 0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   framebufferWidth = width;
   framebufferHeight = height;
   glViewport(0, 0, width, height);
   recreateHdrFbo(width, height);
   recreateAccumFbo(width, height);
+  recreateSplatFbo(width, height);
+  if (g_scene) g_scene->init_depth_peel(width, height);
 }
 
 void setMouseLook(GLFWwindow *window, bool enabled) {
