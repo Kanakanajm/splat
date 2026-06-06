@@ -99,5 +99,7 @@ Omnidirectional shadow map via depth cubemap (LearnOpenGL point shadows approach
 | # | Task | Status |
 |---|---|---|
 | 1 | Instancing + CPU backface cull | Reverted — no gain over GS |
-| 2 | Surface bleeding (stencil) | Done — visual verification pending |
-| 3 | Direct lighting shadows | Done — visual verification pending |
+| 2 | Surface bleeding (stencil) | **Deferred** — depth test prevents splats on *other* surfaces; same-surface junction bleeding (edge artifacts on the same wall) is still present but not addressed. Stencil approach shelved for now. |
+| 3 | Direct lighting shadows | **Done** — merged to main (PR #13) |
+
+**Overall: Closed.** Shadow map complete; stencil deferred to future work.
