@@ -17,6 +17,10 @@
 | [power_sanity_status.md](power_sanity_status.md) | `trace` | Energy-conservation sanity checks for V2 power tracking: surface albedo decay, beam albedo decay, combined lossless scene. 5/5 tests passing, visually verified. |
 | [depth_peel_status.md](depth_peel_status.md) | `vol-splat` | Depth-peel pass producing `peel_depth_array_` + `peel_medium_array_` for camera-side transmittance. 8/8 tests passing. |
 | [billboard_gs_status.md](billboard_gs_status.md) | `vol-splat` | Geometry shader expands beam lines into camera-facing billboard quads; `vUt`/`vT` interpolated for radiance estimate. 66/66 tests passing. |
+| [splat_v1_status.md](splat_v1_status.md) | `surface-splat` | Surface photon point splatting: GS-expanded Epanechnikov kernel splats, depth-tested indirect illumination. 5/5 tasks done. |
+| [splat_v15_status.md](splat_v15_status.md) | `surface-splat` | Throughput (instancing reverted), direct shadow map done; stencil surface bleeding deferred. Merged to main (PR #13). |
+| [capture_status.md](capture_status.md) | `capture` | Multi-pass offline capture: sub-pass trace → GPU accumulation → EXR export via tinyexr. Merged to main (PR #14). |
+| [vol_splat_beam_status.md](vol_splat_beam_status.md) | `vol-splat` | Full beam radiance estimate (Tr camera-side + beam-side, phase, kernel); HDR pipeline; env/multi-light; capture integration. |
 
 # On-going
 
