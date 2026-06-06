@@ -160,8 +160,18 @@ void DebugUi::drawPhotonBeamPanel(uint32_t max_bounce) {
     ImGui::RadioButton("BounceDepth##bm", &b, static_cast<int>(ViewState::BeamAov::BounceDepth));          ImGui::SameLine();
     ImGui::RadioButton("Length",          &b, static_cast<int>(ViewState::BeamAov::Length));               ImGui::SameLine();
     ImGui::RadioButton("Power",           &b, static_cast<int>(ViewState::BeamAov::BeamPowerStart));       ImGui::SameLine();
-    ImGui::RadioButton("Transmittance",   &b, static_cast<int>(ViewState::BeamAov::BeamTransmittancePreview));
+    ImGui::RadioButton("Transmittance",   &b, static_cast<int>(ViewState::BeamAov::BeamTransmittancePreview)); ImGui::SameLine();
+    ImGui::RadioButton("Splat",           &b, static_cast<int>(ViewState::BeamAov::Splat));
     state_.beamAov = static_cast<ViewState::BeamAov>(b);
+
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::SliderFloat("Beam radius", &state_.beamRadius, 0.001f, 0.5f, "%.3f");
+
+    const int bAov = static_cast<int>(state_.beamAov);
+    if (bAov >= static_cast<int>(ViewState::BeamAov::BeamPowerStart)) {
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::SliderFloat("Exposure", &state_.beamExposure, 0.01f, 100.0f, "%.2f");
+    }
 
     ImGui::Checkbox("All bounces##bm", &state_.allBeamBounces);
     if (!state_.allBeamBounces) {

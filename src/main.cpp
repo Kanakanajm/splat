@@ -12,10 +12,10 @@
 #include "camera.hpp"
 #include "debug_ui.hpp"
 
+#include "env_light.hpp"
 #include "ray_model.hpp"
 #include "scene.hpp"
 #include "scene_config.hpp"
-#include "point_light.hpp"
 #include "photon_tracer.hpp"
 #include "random.hpp"
 #include "tiny_bvh.h"
@@ -38,6 +38,7 @@ void setMouseLook(GLFWwindow *window, bool enabled);
 void setCameraUniforms(Shader &shader, const glm::mat4 &projection, const glm::mat4 &view);
 void recreateHdrFbo(int width, int height);
 void recreateAccumFbo(int width, int height);
+void recreateSplatFbo(int width, int height);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -62,6 +63,12 @@ unsigned int hdrFbo = 0, hdrColorTex = 0, hdrDepthRbo = 0;
 
 // Accumulation FBO for multi-pass capture (GL_RGBA32F)
 unsigned int accumFbo = 0, accumColorTex = 0, accumDepthRbo = 0;
+
+// Splat HDR FBO for interactive splat mode (GL_RGB16F)
+unsigned int splatFbo = 0, splatTex = 0;
+
+// Pointer to scene for depth-peel resize in the framebuffer callback
+Scene* g_scene = nullptr;
 
 int main(int argc, char **argv) {
   // glfw init check
@@ -137,73 +144,54 @@ int main(int argc, char **argv) {
   bvh.Build(rayModel.triangles().data(), rayModel.triangle_count());
 
   Scene scene(rayModel);
-  PointLight light = SceneConfig::load(scenePath).apply(scene);
+  auto lights = SceneConfig::load(scenePath).apply(scene);
 
-  PhotonTracer tracer(scene, bvh, light);
+  PhotonTracer tracer(scene, bvh, lights);
   Rng rng(0xDECAFu);
   tracer.trace(photonCount, /*max_depth=*/20u, rng);
   scene.upload_geometry();
   scene.upload_points(tracer.points());
   scene.upload_beams(tracer.beams());
-  scene.upload_splats(tracer.points());
   std::cout << "Traced " << tracer.points().size() << " points, " << tracer.beams().size()
             << " beams" << std::endl;
 
-  Shader pointShader ("shaders/point.vs",  "shaders/point.fs");
-  Shader beamShader  ("shaders/beam.vs",   "shaders/beam.fs");
-  Shader geomShader  ("shaders/geom.vs",   "shaders/geom.fs");
-  Shader splatShader ("shaders/splat.vs",  "shaders/splat.gs", "shaders/splat.fs");
-  Shader shadowShader("shaders/shadow.vs", "shaders/shadow.gs", "shaders/shadow.fs");
-  Shader hdrShader   ("shaders/hdr.vs",    "shaders/hdr.fs");
-
-  // --- Point light shadow map (depth cubemap, rendered once since scene is static) ---
-  const int   SHADOW_RES = 1024;
-  const float SHADOW_FAR = 25.0f;
-  unsigned int shadowFBO = 0, depthCubemap = 0;
+  // --- Power sanity check 1: stored beam/point power sum vs Phi_total (CPU) ---
   {
-    glGenTextures(1, &depthCubemap);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubemap);
-    for (int i = 0; i < 6; ++i)
-      glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_DEPTH_COMPONENT,
-                   SHADOW_RES, SHADOW_RES, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-
-    glGenFramebuffers(1, &shadowFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthCubemap, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      tinybvh::bvhvec3 phi{};
+      for (const auto& l : lights) {
+          const auto p = std::visit([](const auto& ll) { return ll.total_power(); }, l);
+          phi.x += p.x; phi.y += p.y; phi.z += p.z;
+      }
+      tinybvh::bvhvec3 beam_sum{}, pt_sum{};
+      for (const auto& b : tracer.beams())  { beam_sum.x += b.power.x; beam_sum.y += b.power.y; beam_sum.z += b.power.z; }
+      for (const auto& p : tracer.points()) { pt_sum.x  += p.power.x;  pt_sum.y  += p.power.y;  pt_sum.z  += p.power.z;  }
+      const float combined = beam_sum.x + pt_sum.x;
+      std::cout << "[Power check 1 - CPU, R channel]\n"
+                << "  Phi_total  = " << phi.x      << "\n"
+                << "  beam_sum   = " << beam_sum.x << "  ratio = " << beam_sum.x / phi.x << "\n"
+                << "  point_sum  = " << pt_sum.x   << "  ratio = " << pt_sum.x   / phi.x << "\n"
+                << "  combined   = " << combined   << "  ratio = " << combined    / phi.x << "\n"
+                << std::flush;
   }
-  {
-    const glm::vec3 lp(light.position.x, light.position.y, light.position.z);
-    const glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, SHADOW_FAR);
-    const glm::mat4 shadowMatrices[6] = {
-      shadowProj * glm::lookAt(lp, lp + glm::vec3( 1, 0, 0), glm::vec3(0,-1, 0)),
-      shadowProj * glm::lookAt(lp, lp + glm::vec3(-1, 0, 0), glm::vec3(0,-1, 0)),
-      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0, 1, 0), glm::vec3(0, 0, 1)),
-      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0,-1, 0), glm::vec3(0, 0,-1)),
-      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0, 0, 1), glm::vec3(0,-1, 0)),
-      shadowProj * glm::lookAt(lp, lp + glm::vec3( 0, 0,-1), glm::vec3(0,-1, 0)),
-    };
 
-    glViewport(0, 0, SHADOW_RES, SHADOW_RES);
-    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
-    glClear(GL_DEPTH_BUFFER_BIT);
-    shadowShader.use();
-    for (int i = 0; i < 6; ++i)
-      shadowShader.setMat4("shadowMatrices[" + std::to_string(i) + "]", shadowMatrices[i]);
-    shadowShader.setVec3("lightPos", light.position.x, light.position.y, light.position.z);
-    shadowShader.setFloat("farPlane", SHADOW_FAR);
-    shadowShader.setMat4("model", glm::mat4(1.0f));
-    scene.draw_geometry(shadowShader, /*aov_mode=*/1, {});
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, framebufferWidth, framebufferHeight);
-  }
+  Shader pointShader        ("shaders/point.vs",          "shaders/point.fs");
+  Shader beamShader         ("shaders/beam.vs", "shaders/beam.gs", "shaders/beam.fs");
+  Shader geomShader         ("shaders/geom.vs",           "shaders/geom.fs");
+  Shader depthPeelInitShader("shaders/geom.vs", "shaders/depth_peel_init.fs");
+  Shader depthPeelShader    ("shaders/geom.vs", "shaders/depth_peel.fs");
+  Shader quadShader         ("shaders/quad.vs",           "shaders/quad.fs");
+  Shader presentShader      ("shaders/quad.vs",           "shaders/present.fs");
+
+  unsigned int emptyVAO = 0;
+  glGenVertexArrays(1, &emptyVAO);
+
+  scene.init_depth_peel(framebufferWidth, framebufferHeight);
+  g_scene = &scene;
+
+  recreateSplatFbo(framebufferWidth, framebufferHeight);
+
+  unsigned int peelQuery;
+  glGenQueries(1, &peelQuery);
 
   auto debugUi = std::make_unique<DebugUi>(window);
 
@@ -230,8 +218,72 @@ int main(int argc, char **argv) {
     const glm::mat4 projection =
         glm::perspective(glm::radians(camera.Zoom), aspectRatio, 0.1f, 100.0f);
     const glm::mat4 view = camera.GetViewMatrix();
+    const glm::mat4 invViewProj = glm::inverse(projection * view);
 
     const ViewState& vs = debugUi->viewState();
+
+    // --- Depth peel pass (builds camera-side transmittance maps)
+    int peelLayerCount = 1;
+    {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        glDisable(GL_CULL_FACE);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, scene.peel_fbo());
+
+        // Layer 0: no depth peeling, just record first hit + medium mask.
+        glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                  scene.peel_depth_array(), 0, 0);
+        glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                  scene.peel_medium_array(), 0, 0);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        const GLuint zeroClear[4] = {0u, 0u, 0u, 0u};
+        glClearBufferuiv(GL_COLOR, 0, zeroClear);
+
+        setCameraUniforms(depthPeelInitShader, projection, view);
+        scene.draw_geometry_peel(depthPeelInitShader);
+
+        // Bind texture arrays for sampling previous layers.
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_depth_array());
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_medium_array());
+        glActiveTexture(GL_TEXTURE0);
+
+        depthPeelShader.use();
+        depthPeelShader.setInt("previousDepths", 0);
+        depthPeelShader.setInt("previousMedia",  1);
+        depthPeelShader.setFloat("peelEpsilon",  1e-5f);
+
+        // Layers 1+: peel past the previous layer.
+        for (int layer = 1; layer < scene.peel_max_layers(); ++layer) {
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                      scene.peel_depth_array(), 0, layer);
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                      scene.peel_medium_array(), 0, layer);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glClearBufferuiv(GL_COLOR, 0, zeroClear);
+
+            setCameraUniforms(depthPeelShader, projection, view);
+            depthPeelShader.setInt("previousLayerIdx", layer - 1);
+
+            glBeginQuery(GL_ANY_SAMPLES_PASSED, peelQuery);
+            scene.draw_geometry_peel(depthPeelShader);
+            glEndQuery(GL_ANY_SAMPLES_PASSED);
+
+            GLuint anySamples = GL_FALSE;
+            glGetQueryObjectuiv(peelQuery, GL_QUERY_RESULT, &anySamples);
+            if (!anySamples) break;
+            peelLayerCount = layer + 1;
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    const bool isSplatMode = vs.showBeams && (vs.beamAov == ViewState::BeamAov::Splat);
+    const bool depthMode   = vs.showGeometry && vs.geomAov == ViewState::GeomAov::Depth;
 
     // --- Multi-pass capture (triggered by "Render" button in debug UI) --------
     CaptureState& cs = debugUi->captureState();
@@ -243,30 +295,118 @@ int main(int argc, char **argv) {
       const uint32_t N_per_pass = static_cast<uint32_t>(cs.photons_per_pass);
       const uint32_t K          = (N_total + N_per_pass - 1) / N_per_pass;
 
+      constexpr int kMaxMedia = 16;
+      float mediaSigmaT[kMaxMedia] = {};
+      float mediaSigmaS[kMaxMedia] = {};
+      for (uint32_t mi = 0; mi < std::min(scene.medium_count(), static_cast<uint32_t>(kMaxMedia)); ++mi) {
+          mediaSigmaT[mi] = scene.medium(mi).sigma_t();
+          mediaSigmaS[mi] = scene.medium(mi).sigma_s;
+      }
+
       glBindFramebuffer(GL_FRAMEBUFFER, accumFbo);
+      glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-      // Depth prepass: fill accumFbo depth buffer from geometry (once, camera is fixed).
-      glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+      // Bind peel textures once — used by background, surface, and beam passes.
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_depth_array());
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_medium_array());
+      glActiveTexture(GL_TEXTURE0);
+
+      // --- 1. Background pass: bgColor * T_cam(cam -> inf), no depth test/write ---
+      glDisable(GL_DEPTH_TEST);
+      glDepthMask(GL_FALSE);
+      glDisable(GL_BLEND);
+      quadShader.use();
+      quadShader.setInt("depthMap", 0);
+      quadShader.setInt("mediumMap", 1);
+      quadShader.setInt("numPeelLayers", peelLayerCount);
+      quadShader.setMat4("invViewProj", invViewProj);
+      quadShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      quadShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                       static_cast<float>(framebufferHeight));
+      quadShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+      {
+          glm::vec3 bgColor{0.0f};
+          for (const auto& l : lights)
+              if (const auto* el = std::get_if<EnvLight>(&l))
+                  { bgColor = {el->color.x, el->color.y, el->color.z}; break; }
+          quadShader.setVec3("bgColor", bgColor.x, bgColor.y, bgColor.z);
+      }
+      glBindVertexArray(emptyVAO);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
+      glBindVertexArray(0);
+
+      // --- 2. Opaque surface pass: L_surface * T_cam(cam -> surface), with depth write ---
+      glEnable(GL_DEPTH_TEST);
+      glDepthFunc(GL_LESS);
+      glDepthMask(GL_TRUE);
+      glDisable(GL_BLEND);
       setCameraUniforms(geomShader, projection, view);
-      scene.draw_geometry(geomShader, /*aov_mode=*/1, vs.instanceVisible);
-      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+      geomShader.setInt("aov_mode", 1); // Diffuse
+      geomShader.setVec3("cameraPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      {
+          glm::vec3 lightPos{0.0f};
+          for (const auto& l : lights)
+              if (const auto* pl = std::get_if<PointLight>(&l))
+                  { lightPos = {pl->position.x, pl->position.y, pl->position.z}; break; }
+          geomShader.setVec3("lightPos", lightPos.x, lightPos.y, lightPos.z);
+      }
+      geomShader.setFloat("nearPlane", 0.1f);
+      geomShader.setFloat("farPlane", 10.0f);
+      geomShader.setInt("attenuateMedium", 1);
+      geomShader.setInt("depthMap", 0);
+      geomShader.setInt("mediumMap", 1);
+      geomShader.setInt("numPeelLayers", peelLayerCount);
+      geomShader.setMat4("invViewProj", invViewProj);
+      geomShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      geomShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                       static_cast<float>(framebufferHeight));
+      geomShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+      scene.draw_geometry(geomShader, 1, {}, false);
+
+      // --- 3. Beam passes: additive, depth-tested against opaque surface depth ---
+      glDepthMask(GL_FALSE);
 
       for (uint32_t pass = 0; pass < K; ++pass) {
         Rng pass_rng(0xDECAFu + pass);
         tracer.trace(N_per_pass, /*max_depth=*/20u, pass_rng, N_total);
-        scene.upload_splats(tracer.points());
+        scene.upload_beams(tracer.beams());
         tracer.release_cpu_memory();
-        setCameraUniforms(splatShader, projection, view);
-        scene.draw_splats(splatShader, vs.splatH, /*exposure=*/1.0f, /*aov=*/0);
-        glFinish();  // drain GPU queue so driver can free the previous pass's VBO
+
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);
+        setCameraUniforms(beamShader, projection, view);
+        beamShader.setVec3("cameraDir", camera.Front.x, camera.Front.y, camera.Front.z);
+        beamShader.setFloat("beamRadius", vs.beamRadius);
+        beamShader.setFloat("exposure", vs.beamExposure);
+        beamShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+        beamShader.setFloatArray("mediaSigmaS", mediaSigmaS, kMaxMedia);
+        beamShader.setInt("depthMap", 0);
+        beamShader.setInt("mediumMap", 1);
+        beamShader.setInt("numPeelLayers", peelLayerCount);
+        beamShader.setMat4("invViewProj", invViewProj);
+        beamShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+        beamShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                         static_cast<float>(framebufferHeight));
+        scene.draw_beams(beamShader, static_cast<int>(ViewState::BeamAov::Splat), vs.mediumBeamsVisible);
+        glDisable(GL_BLEND);
+        glFinish();
         std::cout << "Capture pass " << (pass + 1) << "/" << K << "\n";
       }
+
+      glDepthMask(GL_TRUE);
+      glEnable(GL_DEPTH_TEST);
 
       // Readback accumulated radiance, flip Y (GL origin is bottom-left), strip alpha.
       const int W = framebufferWidth, H = framebufferHeight;
       std::vector<float> raw(W * H * 4);
+      glBindFramebuffer(GL_FRAMEBUFFER, accumFbo);
       glReadPixels(0, 0, W, H, GL_RGBA, GL_FLOAT, raw.data());
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
       std::vector<float> rgb(W * H * 3);
       for (int y = 0; y < H; ++y) {
@@ -287,24 +427,119 @@ int main(int argc, char **argv) {
         std::cout << "Saved: " << cs.output_path << "\n";
       }
 
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-      // Restore interactive splats with the original photon count.
+      // Restore interactive beams with the original photon count.
       Rng restore_rng(0xDECAFu);
       tracer.trace(photonCount, /*max_depth=*/20u, restore_rng);
-      scene.upload_splats(tracer.points());
+      scene.upload_beams(tracer.beams());
 
       cs.is_running = false;
     }
 
-    // Render all scene passes into the HDR FBO (linear float16 accumulation).
-    glBindFramebuffer(GL_FRAMEBUFFER, hdrFbo);
+    // Default framebuffer clear (splat result is composited later).
+    glClearColor(depthMode ? 1.0f : 0.392f,
+                 depthMode ? 1.0f : 0.392f,
+                 depthMode ? 1.0f : 0.392f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    const bool depthMode = vs.showGeometry && vs.geomAov == ViewState::GeomAov::Depth;
-    glClearColor(depthMode ? 1.0f : 0.05f,
-                 depthMode ? 1.0f : 0.05f,
-                 depthMode ? 1.0f : 0.08f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    // --- Splat mode: accumulate L_bg*T_cam + beam splats into linear HDR buffer,
+    //     then gamma-correct to the default framebuffer.
+    if (isSplatMode) {
+      constexpr int kMaxMedia = 16;
+      float mediaSigmaT[kMaxMedia] = {};
+      float mediaSigmaS[kMaxMedia] = {};
+      for (uint32_t i = 0; i < std::min(scene.medium_count(), static_cast<uint32_t>(kMaxMedia)); ++i) {
+          mediaSigmaT[i] = scene.medium(i).sigma_t();
+          mediaSigmaS[i] = scene.medium(i).sigma_s;
+      }
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_depth_array());
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_medium_array());
+      glActiveTexture(GL_TEXTURE0);
+
+      // -- Accumulate into linear HDR FBO --
+      glBindFramebuffer(GL_FRAMEBUFFER, splatFbo);
+      glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+      glClear(GL_COLOR_BUFFER_BIT);
+      glDisable(GL_DEPTH_TEST);
+      glDisable(GL_BLEND);
+
+      // Background: L_bg * T_cam
+      quadShader.use();
+      quadShader.setInt("depthMap", 0);
+      quadShader.setInt("mediumMap", 1);
+      quadShader.setInt("numPeelLayers", peelLayerCount);
+      quadShader.setMat4("invViewProj", invViewProj);
+      quadShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      quadShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                       static_cast<float>(framebufferHeight));
+      quadShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+      glm::vec3 bgColor{0.0f};
+      for (const auto& l : lights)
+          if (const auto* el = std::get_if<EnvLight>(&l))
+              { bgColor = {el->color.x, el->color.y, el->color.z}; break; }
+      quadShader.setVec3("bgColor", bgColor.x, bgColor.y, bgColor.z);
+      glBindVertexArray(emptyVAO);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
+      glBindVertexArray(0);
+
+      // Beam splats: additive contributions in linear space
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_ONE, GL_ONE);
+      setCameraUniforms(beamShader, projection, view);
+      beamShader.setVec3("cameraDir", camera.Front.x, camera.Front.y, camera.Front.z);
+      beamShader.setFloat("beamRadius", vs.beamRadius);
+      beamShader.setFloat("exposure", vs.beamExposure);
+      beamShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+      beamShader.setFloatArray("mediaSigmaS", mediaSigmaS, kMaxMedia);
+      beamShader.setInt("depthMap", 0);
+      beamShader.setInt("mediumMap", 1);
+      beamShader.setInt("numPeelLayers", peelLayerCount);
+      beamShader.setMat4("invViewProj", invViewProj);
+      beamShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      beamShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                       static_cast<float>(framebufferHeight));
+      const int beamBounceFilter = vs.allBeamBounces ? -1 : vs.beamBounceFilter;
+      scene.draw_beams(beamShader, static_cast<int>(ViewState::BeamAov::Splat),
+                       vs.mediumBeamsVisible, beamBounceFilter);
+      glDisable(GL_BLEND);
+
+      // --- Power sanity check 2: splat buffer pixel sum (GPU, linear, first frame only) ---
+      {
+          static bool done = false;
+          if (!done) {
+              done = true;
+              std::vector<float> px(framebufferWidth * framebufferHeight * 3);
+              glBindTexture(GL_TEXTURE_2D, splatTex);
+              glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, px.data());
+              glBindTexture(GL_TEXTURE_2D, 0);
+              double sum = 0.0;
+              for (float v : px) sum += v;
+              const double avg = sum / (framebufferWidth * framebufferHeight);
+              std::cout << "[Power check 2 - GPU splat buffer, R+G+B sum]\n"
+                        << "  pixel RGB sum = " << sum << "\n"
+                        << "  avg per pixel = " << avg << "\n"
+                        << std::flush;
+          }
+      }
+
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      glEnable(GL_DEPTH_TEST);
+
+      // Present: gamma-correct HDR buffer to default framebuffer
+      glDisable(GL_DEPTH_TEST);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, splatTex);
+      presentShader.use();
+      presentShader.setInt("splatBuffer", 0);
+      presentShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                          static_cast<float>(framebufferHeight));
+      glBindVertexArray(emptyVAO);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
+      glBindVertexArray(0);
+      glEnable(GL_DEPTH_TEST);
+    }
 
     // --- Geometry pass
     if (vs.showGeometry) {
@@ -312,29 +547,16 @@ int main(int argc, char **argv) {
       setCameraUniforms(geomShader, projection, view);
       geomShader.setInt("aov_mode", geomAov);
       geomShader.setVec3("cameraPos", camera.Position.x, camera.Position.y, camera.Position.z);
-      geomShader.setVec3("lightPos", light.position.x, light.position.y, light.position.z);
+      glm::vec3 lightPos{0.0f};
+      for (const auto& l : lights)
+          if (const auto* pl = std::get_if<PointLight>(&l))
+              { lightPos = {pl->position.x, pl->position.y, pl->position.z}; break; }
+      geomShader.setVec3("lightPos", lightPos.x, lightPos.y, lightPos.z);
       geomShader.setFloat("nearPlane", 0.1f);
       geomShader.setFloat("farPlane", 10.0f);
-      geomShader.setInt("shadowMap", 1);
-      geomShader.setFloat("shadowFarPlane", SHADOW_FAR);
-      geomShader.setBool("useShadow", vs.useShadow);
-      glActiveTexture(GL_TEXTURE1);
-      glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubemap);
-      scene.draw_geometry(geomShader, geomAov, vs.instanceVisible);
-    }
+      geomShader.setInt("attenuateMedium", 0);
 
-    // --- Depth prepass (when geometry is hidden but splat needs a filled depth buffer)
-    if (vs.showSplat && !vs.showGeometry) {
-      glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-      setCameraUniforms(geomShader, projection, view);
-      scene.draw_geometry(geomShader, /*aov_mode=*/1, vs.instanceVisible);
-      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    }
-
-    // --- Splat pass (after geometry so depth buffer is populated)
-    if (vs.showSplat) {
-      setCameraUniforms(splatShader, projection, view);
-      scene.draw_splats(splatShader, vs.splatH, vs.exposure, static_cast<int>(vs.splatAov));
+      scene.draw_geometry(geomShader, geomAov, vs.instanceVisible, false);
     }
 
     // --- Photon point pass
@@ -345,9 +567,36 @@ int main(int argc, char **argv) {
       scene.draw_points(pointShader, static_cast<int>(vs.pointAov), vs.instancePointsVisible, bounceFilter);
     }
 
-    // --- Photon beam pass
-    if (vs.showBeams) {
+    // --- Photon beam pass (diagnostic AOV modes only; splat mode handled above)
+    if (vs.showBeams && !isSplatMode) {
       setCameraUniforms(beamShader, projection, view);
+      beamShader.setVec3("cameraDir", camera.Front.x, camera.Front.y, camera.Front.z);
+      beamShader.setFloat("beamRadius", vs.beamRadius);
+      beamShader.setFloat("exposure", vs.beamExposure);
+
+      constexpr int kMaxMedia = 16;
+      float mediaSigmaT[kMaxMedia] = {};
+      float mediaSigmaS[kMaxMedia] = {};
+      for (uint32_t i = 0; i < std::min(scene.medium_count(), static_cast<uint32_t>(kMaxMedia)); ++i) {
+          mediaSigmaT[i] = scene.medium(i).sigma_t();
+          mediaSigmaS[i] = scene.medium(i).sigma_s;
+      }
+      beamShader.setFloatArray("mediaSigmaT", mediaSigmaT, kMaxMedia);
+      beamShader.setFloatArray("mediaSigmaS", mediaSigmaS, kMaxMedia);
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_depth_array());
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, scene.peel_medium_array());
+      glActiveTexture(GL_TEXTURE0);
+      beamShader.setInt("depthMap", 0);
+      beamShader.setInt("mediumMap", 1);
+      beamShader.setInt("numPeelLayers", peelLayerCount);
+      beamShader.setMat4("invViewProj", invViewProj);
+      beamShader.setVec3("cameraWorldPos", camera.Position.x, camera.Position.y, camera.Position.z);
+      beamShader.setVec2("resolution", static_cast<float>(framebufferWidth),
+                                       static_cast<float>(framebufferHeight));
+
       const int beamBounceFilter = vs.allBeamBounces ? -1 : vs.beamBounceFilter;
       scene.draw_beams(beamShader, static_cast<int>(vs.beamAov), vs.mediumBeamsVisible, beamBounceFilter);
     }
@@ -373,20 +622,6 @@ int main(int argc, char **argv) {
         sPrevLeftDown = leftDown;
     }
 
-    // Blit HDR buffer to the default framebuffer.
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glDisable(GL_DEPTH_TEST);
-    hdrShader.use();
-    hdrShader.setInt("hdrTex", 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, hdrColorTex);
-    glBindVertexArray(screenVao);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-    glBindVertexArray(0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glEnable(GL_DEPTH_TEST);
-
     const uint32_t instance_count = rayModel.instance_count();
     const uint32_t medium_count   = scene.medium_count();
     if (debugUi->draw(camera, vsyncEnabled, instance_count, medium_count,
@@ -400,6 +635,9 @@ int main(int argc, char **argv) {
 
   debugUi.reset();
 
+  glDeleteFramebuffers(1, &splatFbo);
+  glDeleteTextures(1, &splatTex);
+  glDeleteQueries(1, &peelQuery);
   glfwDestroyWindow(window);
   glfwTerminate();
   return 0;
@@ -494,12 +732,33 @@ void recreateAccumFbo(int width, int height) {
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+void recreateSplatFbo(int width, int height) {
+  if (splatFbo) {
+    glDeleteFramebuffers(1, &splatFbo);
+    glDeleteTextures(1, &splatTex);
+  }
+  glGenTextures(1, &splatTex);
+  glBindTexture(GL_TEXTURE_2D, splatTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glGenFramebuffers(1, &splatFbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, splatFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, splatTex, 0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   framebufferWidth = width;
   framebufferHeight = height;
   glViewport(0, 0, width, height);
   recreateHdrFbo(width, height);
   recreateAccumFbo(width, height);
+  recreateSplatFbo(width, height);
+  if (g_scene) g_scene->init_depth_peel(width, height);
 }
 
 void setMouseLook(GLFWwindow *window, bool enabled) {

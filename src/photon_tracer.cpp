@@ -33,12 +33,30 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
     constexpr float kEps = 1e-4f;  // ray-origin offset to escape the interaction point
 
     const float n = static_cast<float>(norm_count > 0 ? norm_count : photon_count);
-    const tinybvh::bvhvec3 init_weight = light_.power;
+
+    // Build CDF over lights weighted by total power (sum of RGB channels).
+    // Also accumulate Φ_total for the per-photon weight.
+    std::vector<float>   cdf(lights_.size());
+    tinybvh::bvhvec3     total_power{};
+    float                cumulative = 0.0f;
+    for (size_t k = 0; k < lights_.size(); ++k) {
+        const tinybvh::bvhvec3 p = std::visit([](const auto& l) { return l.total_power(); }, lights_[k]);
+        total_power.x += p.x; total_power.y += p.y; total_power.z += p.z;
+        cumulative += p.x + p.y + p.z;
+        cdf[k] = cumulative;
+    }
+    if (cumulative > 0.0f)
+        for (auto& c : cdf) c /= cumulative;
 
     for (uint32_t i = 0; i < photon_count; ++i) {
-        tinybvh::Ray     ray    = light_.emit_ray(rng);
-        uint32_t         m      = light_.medium_id; // current medium
-        tinybvh::bvhvec3 weight = init_weight; // current weight
+        // Sample a light proportional to its total power.
+        const float xi  = rng.uniform();
+        const int   idx = static_cast<int>(std::lower_bound(cdf.begin(), cdf.end(), xi) - cdf.begin());
+        const Light& chosen = lights_[std::min(idx, static_cast<int>(lights_.size()) - 1)];
+
+        tinybvh::Ray     ray    = std::visit([&](const auto& l) { return l.emit_ray(rng); }, chosen);
+        uint32_t         m      = std::visit([](const auto& l) -> uint32_t { return l.medium_id; }, chosen);
+        tinybvh::bvhvec3 weight = total_power; // Φ_total; divided by N at store time
 
         for (uint32_t depth = 0; depth < max_depth; ++depth) {
             bvh_.Intersect(ray);
@@ -61,7 +79,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
                                                ray.O.y + t_media * ray.D.y,
                                                ray.O.z + t_media * ray.D.z};
 
-                beams_.push_back({ray.O, scatter, m, depth, weight});
+                beams_.push_back({ray.O, scatter, m, depth, weight / n});
 
                 // Russian roulette.
                 // const float prr = std::max(0.05f, std::min(0.95f, max_component(weight)));
@@ -97,9 +115,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
                                    bsdf_id, scene_.model().instance_id(prim), depth, weight/n});
             }
 
-            // Russian roulette: base prr on material albedo so survival rate is
-            // independent of absolute photon power (avoids near-zero prr for dim lights).
-            // disable RR for now
+            // Russian roulette.
             // const float prr = std::max(0.05f, std::min(0.95f, max_component(weight)));
             // if (rng.uniform() >= prr) break;
             // weight.x /= prr; weight.y /= prr; weight.z /= prr;

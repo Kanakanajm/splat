@@ -41,7 +41,8 @@ public:
     // --- OpenGL visualization (implemented in scene_gl.cpp, app-only).
     // Upload* needs a current GL context; it builds VAO/VBOs from the scene data.
     void upload_geometry();
-    void draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>& instance_visible) const;
+    void draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>& instance_visible,
+                       bool skip_media = false) const;
 
     void upload_points(const std::vector<PhotonPoint>& points);
     uint32_t max_bounce_depth() const { return points_max_bounce_; }
@@ -57,10 +58,15 @@ public:
     void draw_beams(Shader& shader, int aov_mode, const std::vector<bool>& medium_visible,
                     int bounce_filter = -1);
 
-    // Splat pass: kernel-weighted surface photon splatting (indirect, bounce_depth >= 1).
-    // Camera uniforms must be set on splat_shader before calling draw_splats.
-    void upload_splats(const std::vector<PhotonPoint>& points);
-    void draw_splats(Shader& splat_shader, float h, float exposure = 1.0f, int aov_mode = 0);
+    // --- Depth peel (camera-side transmittance maps).
+    // Allocates GL_TEXTURE_2D_ARRAY depth and medium arrays + FBO.
+    void         init_depth_peel(int width, int height, int max_layers = 8);
+    // Draws all scene geometry per-instance, setting mediumId uniform from instance_medium_in_.
+    void         draw_geometry_peel(Shader& shader) const;
+    unsigned int peel_fbo()          const { return peel_fbo_; }
+    unsigned int peel_depth_array()  const { return peel_depth_array_; }
+    unsigned int peel_medium_array() const { return peel_medium_array_; }
+    int          peel_max_layers()   const { return peel_max_layers_; }
 
 private:
     const RayModel&       model_;
@@ -96,10 +102,9 @@ private:
     float                   beam_max_bounce_ = 1.0f;
     float                   beam_max_length_ = 1.0f;
 
-    // GL handles for the splat pass (0 until first upload).
-    unsigned int splats_vao_         = 0;
-    unsigned int splats_vbo_         = 0;
-    uint32_t     splat_vertex_count_ = 0;
-    unsigned int splat_kernel_tex_   = 0;
-    std::vector<InstanceRange> splat_ranges_;  // one per instance, into splats VBO
+    // GL handles for depth peel (0 until init_depth_peel).
+    unsigned int peel_fbo_          = 0;
+    unsigned int peel_depth_array_  = 0;
+    unsigned int peel_medium_array_ = 0;
+    int          peel_max_layers_   = 0;
 };

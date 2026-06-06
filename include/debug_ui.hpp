@@ -42,10 +42,12 @@ struct ViewState {
     // --- Photon Beams --------------------------------------------------------
     bool showBeams = false;
     enum class BeamAov : int { MediumId, T, BounceDepth, Length,
-                               BeamPowerStart, BeamTransmittancePreview } beamAov = BeamAov::MediumId;
+                               BeamPowerStart, BeamTransmittancePreview, Splat } beamAov = BeamAov::Splat;
     std::vector<bool> mediumBeamsVisible;  // per-medium; empty = all visible
-    bool allBeamBounces   = true;
-    int  beamBounceFilter = 0;
+    bool  allBeamBounces   = true;
+    int   beamBounceFilter = 0;
+    float beamRadius       = 0.05f;
+    float beamExposure     = 1.0f;
 };
 
 class DebugUi {

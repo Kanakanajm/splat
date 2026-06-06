@@ -15,11 +15,10 @@
 | [aov_debug_status.md](aov_debug_status.md) | `trace` | ViewState-driven debug AOVs: geometry wireframe/normals/depth/backface/diffuse, point/beam coloring modes, per-instance/per-medium/bounce-depth filters. 5/5 tasks done. |
 | [trace_v2_status.md](trace_v2_status.md) | `trace` | RGB power tracking, RR, Conductor/Dielectric BSDFs, power AOVs. 7/7 tasks done. |
 | [power_sanity_status.md](power_sanity_status.md) | `trace` | Energy-conservation sanity checks for V2 power tracking: surface albedo decay, beam albedo decay, combined lossless scene. 5/5 tests passing, visually verified. |
+| [depth_peel_status.md](depth_peel_status.md) | `vol-splat` | Depth-peel pass producing `peel_depth_array_` + `peel_medium_array_` for camera-side transmittance. 8/8 tests passing. |
+| [billboard_gs_status.md](billboard_gs_status.md) | `vol-splat` | Geometry shader expands beam lines into camera-facing billboard quads; `vUt`/`vT` interpolated for radiance estimate. 66/66 tests passing. |
 
 # On-going
 
 | Savepoint | Branch | Summary |
 |---|---|---|
-| Opacity pass | `opacity` | Frustum slicing / depth peeling for camera-side attenuation maps. See `docs/project/opacity.md`. |
-| [splat_v1_status.md](splat_v1_status.md) | `surface-splat` | Kernel-weighted surface photon splatting via GS pipeline. See `docs/project/splat.md` § V1. |
-| [splat_v15_status.md](splat_v15_status.md) | `surface-splat` | V1.5 fixes: instancing reverted, stencil surface-bleeding mask, point-light shadow cubemap in diffuse AOV. |

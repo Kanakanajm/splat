@@ -97,7 +97,8 @@ void Scene::upload_geometry() {
     glBindVertexArray(0);
 }
 
-void Scene::draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>& instance_visible) const {
+void Scene::draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>& instance_visible,
+                          bool skip_media) const {
     if (geom_vao_ == 0 || geom_ranges_.empty()) return;
 
     shader.use();
@@ -106,8 +107,11 @@ void Scene::draw_geometry(Shader& shader, int aov_mode, const std::vector<bool>&
     const bool wireframe = (aov_mode == 0 || aov_mode == 4);
     glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
 
+    const bool skip_medium_inst = skip_media || (aov_mode == 1); // always skip for Diffuse AOV
     for (uint32_t i = 0; i < static_cast<uint32_t>(geom_ranges_.size()); ++i) {
         if (!instance_visible.empty() && i < instance_visible.size() && !instance_visible[i])
+            continue;
+        if (skip_medium_inst && i < instance_medium_in_.size() && instance_medium_in_[i] != 0u)
             continue;
         shader.setInt("instanceId", static_cast<int>(i));
         const auto& col = bsdf_table_[instance_bsdf_[i]].color;
@@ -313,142 +317,39 @@ void Scene::draw_beams(Shader& shader, int aov_mode, const std::vector<bool>& me
     glBindVertexArray(0);
 }
 
-// ---- Splat pass -------------------------------------------------------------
+// ---- Depth Peel -------------------------------------------------------------
 
-namespace {
+void Scene::init_depth_peel(int width, int height, int max_layers) {
+    peel_max_layers_ = max_layers;
 
-// Layout per vertex (15 floats = 60 bytes):
-//   [0..2]   position    → shader location 0
-//   [3..5]   normal      → shader location 1
-//   [6..8]   incoming_dir → shader location 2 (reserved for glossy BRDF)
-//   [9..11]  power       → shader location 3
-//   [12..14] bsdf_color  → shader location 4
-std::vector<float> encode_splats(const std::vector<PhotonPoint>& points,
-                                 const std::vector<Bsdf>& bsdf_table) {
-    std::vector<float> data;
-    data.reserve(points.size() * 15);
-    for (const auto& p : points) {
-        const auto& col = bsdf_table[p.bsdf_id < bsdf_table.size() ? p.bsdf_id : 0].color;
-        data.push_back(p.position.x);    data.push_back(p.position.y);    data.push_back(p.position.z);
-        data.push_back(p.normal.x);      data.push_back(p.normal.y);      data.push_back(p.normal.z);
-        data.push_back(p.incoming_dir.x);data.push_back(p.incoming_dir.y);data.push_back(p.incoming_dir.z);
-        data.push_back(p.power.x);       data.push_back(p.power.y);       data.push_back(p.power.z);
-        data.push_back(col.x);           data.push_back(col.y);           data.push_back(col.z);
-    }
-    return data;
+    if (peel_depth_array_ == 0) glGenTextures(1, &peel_depth_array_);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, peel_depth_array_);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT24,
+                 width, height, max_layers, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    if (peel_medium_array_ == 0) glGenTextures(1, &peel_medium_array_);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, peel_medium_array_);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_R32UI,
+                 width, height, max_layers, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    if (peel_fbo_ == 0) glGenFramebuffers(1, &peel_fbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, peel_fbo_);
+    const GLenum drawBuf = GL_COLOR_ATTACHMENT0;
+    glDrawBuffers(1, &drawBuf);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void upload_splats_vbo(unsigned int& vao, unsigned int& vbo, const std::vector<float>& data) {
-    if (vao == 0) glGenVertexArrays(1, &vao);
-    if (vbo == 0) glGenBuffers(1, &vbo);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(data.size() * sizeof(float)),
-                 data.data(), GL_STREAM_DRAW);
-    constexpr GLsizei stride = 15 * sizeof(float);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3  * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, stride, (void*)(6  * sizeof(float)));
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, (void*)(9  * sizeof(float)));
-    glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, stride, (void*)(12 * sizeof(float)));
+void Scene::draw_geometry_peel(Shader& shader) const {
+    if (geom_vao_ == 0 || geom_ranges_.empty()) return;
+    glBindVertexArray(geom_vao_);
+    for (uint32_t i = 0; i < static_cast<uint32_t>(geom_ranges_.size()); ++i) {
+        shader.setInt("mediumId", static_cast<int>(instance_medium_in_[i]));
+        const auto& r = geom_ranges_[i];
+        glDrawArrays(GL_TRIANGLES, static_cast<GLint>(r.start), static_cast<GLsizei>(r.count));
+    }
     glBindVertexArray(0);
-}
-
-unsigned int upload_kernel_tex() {
-    constexpr int kSize = 64;
-    const auto data = build_kernel_texture(kSize);
-    unsigned int tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, kSize, kSize, 0, GL_RED, GL_FLOAT, data.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    const float border[] = {0.0f, 0.0f, 0.0f, 0.0f};
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return tex;
-}
-
-}  // namespace (splat helpers)
-
-void Scene::upload_splats(const std::vector<PhotonPoint>& points) {
-    // Group photons by instance so per-instance draw ranges are contiguous.
-    const uint32_t n_inst = static_cast<uint32_t>(geom_ranges_.size());
-    std::vector<std::vector<float>> inst_data(n_inst);
-    for (const auto& p : points) {
-        const uint32_t iid = (p.instance_id < n_inst) ? p.instance_id : 0u;
-        auto& d = inst_data[iid];
-        const auto& col = bsdf_table_[p.bsdf_id < bsdf_table_.size() ? p.bsdf_id : 0].color;
-        d.push_back(p.position.x);     d.push_back(p.position.y);     d.push_back(p.position.z);
-        d.push_back(p.normal.x);       d.push_back(p.normal.y);       d.push_back(p.normal.z);
-        d.push_back(p.incoming_dir.x); d.push_back(p.incoming_dir.y); d.push_back(p.incoming_dir.z);
-        d.push_back(p.power.x);        d.push_back(p.power.y);        d.push_back(p.power.z);
-        d.push_back(col.x);            d.push_back(col.y);            d.push_back(col.z);
-    }
-
-    std::vector<float> flat;
-    flat.reserve(points.size() * 15);
-    splat_ranges_.resize(n_inst);
-    uint32_t cursor = 0;
-    for (uint32_t i = 0; i < n_inst; ++i) {
-        const uint32_t count = static_cast<uint32_t>(inst_data[i].size() / 15);
-        splat_ranges_[i] = {cursor, count};
-        flat.insert(flat.end(), inst_data[i].begin(), inst_data[i].end());
-        cursor += count;
-    }
-    splat_vertex_count_ = cursor;
-    upload_splats_vbo(splats_vao_, splats_vbo_, flat);
-    if (splat_kernel_tex_ == 0)
-        splat_kernel_tex_ = upload_kernel_tex();
-}
-
-void Scene::draw_splats(Shader& splat_shader, float h, float exposure, int aov_mode) {
-    if (splats_vao_ == 0 || splat_vertex_count_ == 0) return;
-
-    const bool debugAov = (aov_mode != 0);
-
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-    glEnable(GL_POLYGON_OFFSET_FILL);
-    glPolygonOffset(-1.0f, -1.0f);
-
-    if (debugAov) {
-        // Debug AOVs: opaque, depth-writing, no additive blend.
-        glDepthMask(GL_TRUE);
-        glDisable(GL_BLEND);
-        if (aov_mode == 1)  // Wireframe
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    } else {
-        // Radiance: additive blend, no depth write.
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_ONE, GL_ONE);
-        glDepthMask(GL_FALSE);
-    }
-
-    splat_shader.use();
-    splat_shader.setFloat("h", h);
-    splat_shader.setFloat("exposure", exposure);
-    splat_shader.setInt("aov_mode", aov_mode);
-    splat_shader.setInt("kernelTex", 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, splat_kernel_tex_);
-
-    glBindVertexArray(splats_vao_);
-    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(splat_vertex_count_));
-    glBindVertexArray(0);
-
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    glDisable(GL_POLYGON_OFFSET_FILL);
-    glDepthFunc(GL_LESS);
-    glBindTexture(GL_TEXTURE_2D, 0);
 }

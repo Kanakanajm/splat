@@ -5,6 +5,7 @@ add_executable(SplatTests
     bvh_intersect_image_test.cpp
     sampling_test.cpp
     point_light_test.cpp
+    env_light_test.cpp
     photon_tracer_test.cpp
     scene_test.cpp
     bsdf_test.cpp
@@ -16,6 +17,7 @@ add_executable(SplatTests
     ${CMAKE_SOURCE_DIR}/src/image_buffer.cpp
     ${CMAKE_SOURCE_DIR}/src/sampling.cpp
     ${CMAKE_SOURCE_DIR}/src/point_light.cpp
+    ${CMAKE_SOURCE_DIR}/src/env_light.cpp
     ${CMAKE_SOURCE_DIR}/src/photon_tracer.cpp
     ${CMAKE_SOURCE_DIR}/src/scene.cpp
     ${CMAKE_SOURCE_DIR}/src/bsdf.cpp

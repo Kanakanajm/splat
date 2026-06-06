@@ -353,8 +353,9 @@ TEST_CASE("PhotonTracer: stored point carries light power / N on first diffuse h
     tinybvh::BVH bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
-    // depth-0 is not stored; first stored bounce is depth-1. With albedo-based RR
-    // (prr = albedo), weight / prr * albedo = weight, so stored power == init_weight.
+    // Depth-0 is not stored (direct hits excluded). First stored hit is at depth-1
+    // after one Lambertian bounce. With RR disabled, weight = total_power * albedo,
+    // so stored power = total_power * albedo / N. Default Bsdf color = 0.8.
     Scene scene{model};
     constexpr uint32_t kN2 = 100u;
     PointLight light{tinybvh::bvhvec3{0.0f, 0.0f, 0.0f},
@@ -365,9 +366,10 @@ TEST_CASE("PhotonTracer: stored point carries light power / N on first diffuse h
 
     REQUIRE(!tracer.points().empty());
     for (const auto& p : tracer.points()) {
-        REQUIRE(p.power.x == Catch::Approx(2.0f).epsilon(1e-5f));
-        REQUIRE(p.power.y == Catch::Approx(4.0f).epsilon(1e-5f));
-        REQUIRE(p.power.z == Catch::Approx(6.0f).epsilon(1e-5f));
+        REQUIRE(p.bounce_depth == 1u);
+        REQUIRE(p.power.x == Catch::Approx(2.0f * 0.8f).epsilon(1e-5f));
+        REQUIRE(p.power.y == Catch::Approx(4.0f * 0.8f).epsilon(1e-5f));
+        REQUIRE(p.power.z == Catch::Approx(6.0f * 0.8f).epsilon(1e-5f));
     }
 }
 

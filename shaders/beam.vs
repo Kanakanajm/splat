@@ -11,19 +11,21 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
-out float vMediumId;
-out float vT;
-out float vBounceDepth;
-out float vLength;
-out float vSigmaT;
-out vec3  vPower;
+out vec3  gWorldPos;
+out float gMediumId;
+out float gT;
+out float gBounceDepth;
+out float gLength;
+out float gSigmaT;
+out vec3  gPower;
 
 void main() {
-    gl_Position  = projection * view * model * vec4(aPos, 1.0);
-    vMediumId    = aMediumId;
-    vT           = aT;
-    vBounceDepth = aBounceDepth;
-    vLength      = aLength;
-    vSigmaT      = aSigmaT;
-    vPower       = aPower;
+    gWorldPos    = (model * vec4(aPos, 1.0)).xyz;
+    gMediumId    = aMediumId;
+    gT           = aT;
+    gBounceDepth = aBounceDepth;
+    gLength      = aLength;
+    gSigmaT      = aSigmaT;
+    gPower       = aPower;
+    gl_Position  = projection * view * vec4(gWorldPos, 1.0);
 }

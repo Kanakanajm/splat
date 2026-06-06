@@ -20,6 +20,7 @@ add_executable(SplatApp
     src/image_buffer.cpp
     src/sampling.cpp
     src/point_light.cpp
+    src/env_light.cpp
     src/photon_tracer.cpp
     src/scene.cpp
     src/scene_gl.cpp
