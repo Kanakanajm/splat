@@ -311,3 +311,71 @@ TEST_CASE("PathTracer [P3]: vacuum diffuse converges to same value with more SPP
         }
     }
 }
+
+// ── render_checkpointed ───────────────────────────────────────────────────────
+
+TEST_CASE("PathTracer: render_checkpointed calls callback at each checkpoint SPP",
+          "[path_tracer][checkpoint]") {
+    auto verts = make_zquad(0.0f);
+    RayModel model{std::move(verts), std::vector<uint32_t>(2u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+
+    Scene scene{model};
+    scene.set_bsdf(1u, Bsdf{BsdfKind::Diffuse, 1.0f, {1.0f, 1.0f, 1.0f}});
+    scene.set_instance_bsdf(0u, 1u);
+
+    constexpr float kPi = 3.14159265358979f;
+    PointLight light{{0.0f, 0.0f, 1.0f}, {kPi, kPi, kPi}};
+    PathTracer pt{scene, bvh, {Light{light}}, /*max_depth=*/1, /*spp=*/256};
+
+    PinholeCamera cam{
+        .eye    = {0.0f, 0.0f, 2.0f},
+        .target = {0.0f, 0.0f, 0.0f},
+        .up     = {0.0f, 1.0f, 0.0f},
+        .fov_y  = 0.5f, .width = 1u, .height = 1u,
+    };
+
+    std::vector<int> called_spps;
+    std::vector<float> last_buf;
+
+    pt.render_checkpointed(1, 1, cam, {1, 4, 16, 64, 256},
+        [&](int spp, const std::vector<float>& buf) {
+            called_spps.push_back(spp);
+            last_buf = buf;
+        });
+
+    // Callback called exactly once per checkpoint
+    REQUIRE(called_spps.size() == 5);
+    CHECK(called_spps[0] == 1);
+    CHECK(called_spps[1] == 4);
+    CHECK(called_spps[2] == 16);
+    CHECK(called_spps[3] == 64);
+    CHECK(called_spps[4] == 256);
+
+    // 256-spp result should converge close to 1.0 (analytic Lambertian direct)
+    REQUIRE(last_buf.size() == 3u);
+    CHECK(last_buf[0] == Catch::Approx(1.0f).epsilon(0.05f));
+    CHECK(last_buf[1] == Catch::Approx(1.0f).epsilon(0.05f));
+    CHECK(last_buf[2] == Catch::Approx(1.0f).epsilon(0.05f));
+}
+
+TEST_CASE("PathTracer: render_checkpointed with empty checkpoints does nothing",
+          "[path_tracer][checkpoint]") {
+    auto verts = make_zquad(0.0f);
+    RayModel model{std::move(verts), std::vector<uint32_t>(2u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    PathTracer pt{scene, bvh, {}, /*max_depth=*/1, /*spp=*/1};
+
+    PinholeCamera cam{
+        .eye={0.f,0.f,2.f}, .target={0.f,0.f,0.f}, .up={0.f,1.f,0.f},
+        .fov_y=0.5f, .width=1u, .height=1u,
+    };
+
+    int calls = 0;
+    pt.render_checkpointed(1, 1, cam, {},
+        [&](int, const std::vector<float>&) { ++calls; });
+    CHECK(calls == 0);
+}

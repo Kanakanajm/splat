@@ -198,7 +198,7 @@ void DebugUi::drawPhotonBeamPanel(uint32_t max_bounce) {
     }
 }
 
-void DebugUi::drawCapturePanel() {
+void DebugUi::drawCapturePanel(const Camera& camera) {
     if (!ImGui::CollapsingHeader("Capture")) return;
 
     ImGui::Checkbox("Path tracer mode", &capture_.use_path_tracer);
@@ -208,6 +208,15 @@ void DebugUi::drawCapturePanel() {
         ImGui::InputInt("SPP",       &capture_.pt_spp);
         ImGui::SetNextItemWidth(160.0f);
         ImGui::InputInt("Max depth", &capture_.pt_max_depth);
+
+        ImGui::Separator();
+        ImGui::Checkbox("Compare with Mitsuba", &capture_.compare_with_mitsuba);
+        if (capture_.compare_with_mitsuba) {
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::InputInt("Checkpoints", &capture_.pt_num_checkpoints);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(1..SPP, equal intervals)");
+        }
     } else {
         ImGui::SetNextItemWidth(160.0f);
         ImGui::InputInt("Total photons",    &capture_.total_photons);
@@ -215,8 +224,10 @@ void DebugUi::drawCapturePanel() {
         ImGui::InputInt("Photons per pass", &capture_.photons_per_pass);
     }
 
-    ImGui::SetNextItemWidth(240.0f);
-    ImGui::InputText("Output path", capture_.output_path, sizeof(capture_.output_path));
+    if (!capture_.use_path_tracer || !capture_.compare_with_mitsuba) {
+        ImGui::SetNextItemWidth(240.0f);
+        ImGui::InputText("Output path", capture_.output_path, sizeof(capture_.output_path));
+    }
 
     if (capture_.is_running) {
         ImGui::BeginDisabled();
@@ -225,14 +236,28 @@ void DebugUi::drawCapturePanel() {
     } else {
         if (ImGui::Button("Render")) {
             if (capture_.use_path_tracer) {
-                capture_.pt_spp       = std::max(1, capture_.pt_spp);
-                capture_.pt_max_depth = std::max(1, capture_.pt_max_depth);
+                capture_.pt_spp             = std::max(1, capture_.pt_spp);
+                capture_.pt_max_depth       = std::max(1, capture_.pt_max_depth);
+                capture_.pt_num_checkpoints = std::max(1, capture_.pt_num_checkpoints);
             } else {
                 capture_.total_photons    = std::max(1, capture_.total_photons);
                 capture_.photons_per_pass = std::max(1, capture_.photons_per_pass);
             }
             capture_.triggered = true;
         }
+    }
+
+    // Camera inspector
+    ImGui::Separator();
+    if (ImGui::TreeNode("Camera")) {
+        ImGui::Text("pos (%.3f, %.3f, %.3f)", camera.Position.x, camera.Position.y, camera.Position.z);
+        ImGui::Text("dir (%.3f, %.3f, %.3f)", camera.Front.x,    camera.Front.y,    camera.Front.z);
+        ImGui::Text("fov %.1f deg  yaw %.1f  pitch %.1f", camera.Zoom, camera.Yaw, camera.Pitch);
+        ImGui::SetNextItemWidth(240.0f);
+        ImGui::InputText("JSON path", capture_.camera_json_path, sizeof(capture_.camera_json_path));
+        ImGui::SameLine();
+        if (ImGui::Button("Load")) capture_.pending_camera_load = true;
+        ImGui::TreePop();
     }
 }
 
@@ -277,7 +302,7 @@ bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
     drawSplatPanel();
     drawPhotonPointPanel(max_bounce);
     drawPhotonBeamPanel(beam_max_bounce);
-    drawCapturePanel();
+    drawCapturePanel(camera);
 
     ImGui::Separator();
     ImGui::Checkbox("ImGui demo", &showDemoWindow_);

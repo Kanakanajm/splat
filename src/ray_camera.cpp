@@ -1,6 +1,12 @@
 #include "ray_camera.hpp"
 
+#include <json.hpp>
+
 #include <cmath>
+#include <fstream>
+#include <stdexcept>
+
+using json = nlohmann::json;
 
 tinybvh::Ray PinholeCamera::generate_ray(uint32_t px, uint32_t py) const {
     using tinybvh::bvhvec3;
@@ -48,4 +54,34 @@ std::optional<std::pair<int, int>> PinholeCamera::project(const tinybvh::bvhvec3
     const int px = static_cast<int>((ndc_x + 1.0f) * 0.5f * static_cast<float>(width));
     const int py = static_cast<int>((1.0f - ndc_y) * 0.5f * static_cast<float>(height));
     return std::make_pair(px, py);
+}
+
+void PinholeCamera::save_json(const std::string& path) const {
+    json j;
+    j["eye"]    = {eye.x,    eye.y,    eye.z};
+    j["target"] = {target.x, target.y, target.z};
+    j["up"]     = {up.x,     up.y,     up.z};
+    j["fov_y"]  = fov_y;
+    j["width"]  = width;
+    j["height"] = height;
+    std::ofstream f(path);
+    if (!f) throw std::runtime_error("Cannot write camera JSON: " + path);
+    f << j.dump(4) << "\n";
+}
+
+PinholeCamera PinholeCamera::load_json(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) throw std::runtime_error("Cannot read camera JSON: " + path);
+    const json j = json::parse(f);
+    auto v3 = [&](const char* k) -> tinybvh::bvhvec3 {
+        return {j.at(k)[0].get<float>(), j.at(k)[1].get<float>(), j.at(k)[2].get<float>()};
+    };
+    return {
+        .eye    = v3("eye"),
+        .target = v3("target"),
+        .up     = v3("up"),
+        .fov_y  = j.at("fov_y").get<float>(),
+        .width  = j.at("width").get<uint32_t>(),
+        .height = j.at("height").get<uint32_t>(),
+    };
 }

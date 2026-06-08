@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
 
 // Pinhole camera for CPU ray tracing. Aggregate type so callers can use
@@ -26,4 +27,7 @@ struct PinholeCamera {
     // camera. Returned pixel coords may be outside [0, width) x [0, height) —
     // caller is responsible for clipping.
     std::optional<std::pair<int, int>> project(const tinybvh::bvhvec3& world_p) const;
+
+    void save_json(const std::string& path) const;
+    static PinholeCamera load_json(const std::string& path);
 };

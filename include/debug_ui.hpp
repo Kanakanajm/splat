@@ -14,9 +14,17 @@ struct CaptureState {
     bool triggered        = false;
 
     // Path tracer mode
-    bool use_path_tracer = false;
-    int  pt_spp          = 64;
-    int  pt_max_depth    = 8;
+    bool use_path_tracer          = false;
+    int  pt_spp                   = 64;
+    int  pt_max_depth             = 8;
+
+    // Mitsuba comparison (PT mode only)
+    bool compare_with_mitsuba     = false;
+    int  pt_num_checkpoints       = 6;
+
+    // Camera inspector
+    char camera_json_path[256]    = "";
+    bool pending_camera_load      = false;
 };
 
 struct ViewState {
@@ -83,7 +91,7 @@ private:
     void drawPhotonPointPanel(uint32_t max_bounce);
     void drawPhotonBeamPanel(uint32_t max_bounce);
     void drawSplatPanel();
-    void drawCapturePanel();
+    void drawCapturePanel(const Camera& camera);
 
     ViewState    state_;
     CaptureState capture_;

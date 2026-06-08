@@ -1,5 +1,6 @@
 add_executable(SplatTests
     smoke_test.cpp
+    capture_state_test.cpp
     ray_model_test.cpp
     bvh_intersect_test.cpp
     bvh_intersect_image_test.cpp

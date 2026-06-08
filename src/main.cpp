@@ -24,12 +24,32 @@
 
 #include "tinyexr.h"
 
+#include "capture_utils.hpp"
+
 #include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace {
+
+std::string make_output_dir(const std::string& scene_path) {
+    const std::string stem = std::filesystem::path(scene_path).stem().string();
+    const std::time_t t    = std::chrono::system_clock::to_time_t(
+                                 std::chrono::system_clock::now());
+    std::tm tm_buf{};
+    localtime_r(&t, &tm_buf);
+    char ts[16];
+    std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm_buf);
+    return "output/" + stem + "_" + ts;
+}
+
+}  // namespace
 
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
@@ -306,17 +326,50 @@ int main(int argc, char **argv) {
             .width  = static_cast<uint32_t>(W),
             .height = static_cast<uint32_t>(H),
         };
-        PathTracer pt{scene, bvh, lights, cs.pt_max_depth, cs.pt_spp};
-        std::vector<float> pt_rgb;
-        std::cout << "Path tracer: " << cs.pt_spp << " spp, max_depth=" << cs.pt_max_depth << "\n";
-        pt.render(pt_rgb, W, H, pt_cam);
 
-        const char* exrErr = nullptr;
-        if (SaveEXR(pt_rgb.data(), W, H, 3, 0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
-          std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
-          FreeEXRErrorMessage(exrErr);
+        if (cs.compare_with_mitsuba) {
+          // --- Checkpointed render with Mitsuba comparison ---
+          const std::string out_dir = make_output_dir(scenePath);
+          std::filesystem::create_directories(out_dir);
+
+          pt_cam.save_json(out_dir + "/camera.json");
+          std::cout << "Output dir: " << out_dir << "\n";
+
+          const int  n_cp        = std::max(1, std::min(cs.pt_num_checkpoints, cs.pt_spp));
+          const auto checkpoints = generate_checkpoints(cs.pt_spp, n_cp);
+          PathTracer pt{scene, bvh, lights, cs.pt_max_depth, cs.pt_spp};
+          std::cout << "Path tracer (checkpointed): max_depth=" << cs.pt_max_depth << "\n";
+
+          pt.render_checkpointed(W, H, pt_cam, checkpoints,
+            [&](int spp, const std::vector<float>& buf) {
+              char fname[512];
+              std::snprintf(fname, sizeof(fname), "%s/pt_spp%04d.exr", out_dir.c_str(), spp);
+              const char* exrErr = nullptr;
+              if (SaveEXR(buf.data(), W, H, 3, 0, fname, &exrErr) != TINYEXR_SUCCESS) {
+                std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+                FreeEXRErrorMessage(exrErr);
+              } else {
+                std::cout << "Saved: " << fname << "\n";
+              }
+            });
+
+          // TODO(Chunk 2/3): export scene XML and launch tools/run_mitsuba.py
+          std::cout << "[Mitsuba] comparison not yet implemented\n";
+
         } else {
-          std::cout << "Saved: " << cs.output_path << "\n";
+          // --- Single render (original path) ---
+          PathTracer pt{scene, bvh, lights, cs.pt_max_depth, cs.pt_spp};
+          std::vector<float> pt_rgb;
+          std::cout << "Path tracer: " << cs.pt_spp << " spp, max_depth=" << cs.pt_max_depth << "\n";
+          pt.render(pt_rgb, W, H, pt_cam);
+
+          const char* exrErr = nullptr;
+          if (SaveEXR(pt_rgb.data(), W, H, 3, 0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
+            std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+            FreeEXRErrorMessage(exrErr);
+          } else {
+            std::cout << "Saved: " << cs.output_path << "\n";
+          }
         }
 
         cs.is_running = false;
@@ -660,6 +713,30 @@ int main(int argc, char **argv) {
                       scene.max_bounce_depth(), scene.beam_max_bounce())) {
       glfwSwapInterval(vsyncEnabled ? 1 : 0);
     }
+
+    // Apply camera load requested from the debug UI
+    CaptureState& cs_ui = debugUi->captureState();
+    if (cs_ui.pending_camera_load) {
+      cs_ui.pending_camera_load = false;
+      try {
+        const PinholeCamera pc = PinholeCamera::load_json(cs_ui.camera_json_path);
+        camera.Position = {pc.eye.x, pc.eye.y, pc.eye.z};
+        const float dx = pc.target.x - pc.eye.x;
+        const float dy = pc.target.y - pc.eye.y;
+        const float dz = pc.target.z - pc.eye.z;
+        const float len = std::sqrt(dx*dx + dy*dy + dz*dz);
+        if (len > 1e-6f) {
+          camera.Pitch = glm::degrees(std::asin(dy / len));
+          camera.Yaw   = glm::degrees(std::atan2(dz, dx));
+          camera.Zoom  = glm::degrees(pc.fov_y);
+          camera.ProcessMouseMovement(0.0f, 0.0f, false);
+        }
+        std::cout << "Camera loaded from: " << cs_ui.camera_json_path << "\n";
+      } catch (const std::exception& e) {
+        std::cerr << "Camera load failed: " << e.what() << "\n";
+      }
+    }
+
     debugUi->endFrame();
 
     glfwSwapBuffers(window);

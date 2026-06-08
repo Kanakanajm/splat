@@ -238,3 +238,46 @@ void PathTracer::render(std::vector<float>& out, int width, int height,
     const float inv = 1.0f / static_cast<float>(spp_);
     for (size_t i = 0; i < n; ++i) out[i] *= inv;
 }
+
+void PathTracer::render_checkpointed(int width, int height, const PinholeCamera& cam,
+                                      const std::vector<int>& checkpoints,
+                                      const CheckpointFn& on_checkpoint,
+                                      uint32_t start_medium) const {
+    if (checkpoints.empty()) return;
+
+    const int    total = checkpoints.back();
+    const size_t n     = static_cast<size_t>(width * height * 3);
+    std::vector<float> accum(n, 0.0f);
+    std::vector<float> out(n);
+
+    int ci = 0;
+    for (int s = 0; s < total; ++s) {
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                // Seed: high bits = pixel index, low 20 bits = sample index.
+                // Intentionally independent of total SPP so checkpoints are nested.
+                const uint64_t seed = (static_cast<uint64_t>(y * width + x) << 20)
+                                    | static_cast<uint64_t>(s);
+                Rng rng{seed};
+                tinybvh::Ray r = cam.generate_ray(
+                    static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                const auto lo = Li(r, start_medium, rng);
+                const int idx = (y * width + x) * 3;
+                accum[idx + 0] += lo.x;
+                accum[idx + 1] += lo.y;
+                accum[idx + 2] += lo.z;
+            }
+        }
+
+        const int done = s + 1;
+        std::cout << "\r[PT] sample " << done << " / " << total << std::flush;
+
+        if (ci < static_cast<int>(checkpoints.size()) && done == checkpoints[ci]) {
+            const float inv = 1.0f / static_cast<float>(done);
+            for (size_t i = 0; i < n; ++i) out[i] = accum[i] * inv;
+            on_checkpoint(done, out);
+            ++ci;
+        }
+    }
+    std::cout << "\n";
+}
