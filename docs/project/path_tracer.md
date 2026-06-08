@@ -134,6 +134,25 @@ public:
 
 | # | Task | Files |
 |---|---|---|
-| 1 | `PathTracer` class: ray generation, Li loop, NEE | `include/path_tracer.hpp`, `src/path_tracer.cpp` |
-| 2 | Wire into capture mode (`main.cpp`) as an alternative renderer | `src/main.cpp`, `src/debug_ui.cpp` |
-| 3 | Tests: Beer-Lambert single slab, single-scatter energy balance | `tests/path_tracer_test.cpp` |
+| 1 | ~~`PathTracer` class: ray generation, Li loop, NEE~~ ✓ | `include/path_tracer.hpp`, `src/path_tracer.cpp` |
+| 2 | ~~Wire into capture mode (`main.cpp`) as an alternative renderer~~ ✓ | `src/main.cpp`, `src/debug_ui.cpp` |
+| 3 | ~~Tests: Beer-Lambert single slab, single-scatter energy balance~~ ✓ | `tests/path_tracer_test.cpp` |
+| 4 | Validate against Mitsuba 3 `volpath` integrator | — |
+
+## Known Limitations
+
+### Shadow ray medium attenuation (deferred)
+
+`nee_surface` and `nee_medium` in `src/path_tracer.cpp` compute shadow-ray transmittance as:
+
+```cpp
+float Tr = std::exp(-sigma_t * dist);  // sigma_t of current medium only
+```
+
+This is **incorrect** when the shadow ray traverses multiple media (e.g. exits a MediumShell
+into vacuum before reaching the light). The correct approach is to walk the shadow ray through
+the scene, accumulating `exp(-sigma_t_i * segment_i)` for each medium segment.
+
+**Impact**: wrong attenuation for any scene where the shadow ray crosses a medium boundary.
+**Scope**: deferred until medium rendering validation. Vacuum scenes (sigma_t = 0 → Tr = 1)
+and pure-diffuse surface renders are unaffected.

@@ -17,6 +17,8 @@
 #include "scene.hpp"
 #include "scene_config.hpp"
 #include "photon_tracer.hpp"
+#include "path_tracer.hpp"
+#include "ray_camera.hpp"
 #include "random.hpp"
 #include "tiny_bvh.h"
 
@@ -291,6 +293,35 @@ int main(int argc, char **argv) {
       cs.triggered  = false;
       cs.is_running = true;
 
+      if (cs.use_path_tracer) {
+        // --- Path tracer capture ---
+        const int W = framebufferWidth, H = framebufferHeight;
+        PinholeCamera pt_cam{
+            .eye    = {camera.Position.x, camera.Position.y, camera.Position.z},
+            .target = {camera.Position.x + camera.Front.x,
+                       camera.Position.y + camera.Front.y,
+                       camera.Position.z + camera.Front.z},
+            .up     = {camera.Up.x, camera.Up.y, camera.Up.z},
+            .fov_y  = glm::radians(camera.Zoom),
+            .width  = static_cast<uint32_t>(W),
+            .height = static_cast<uint32_t>(H),
+        };
+        PathTracer pt{scene, bvh, lights, cs.pt_max_depth, cs.pt_spp};
+        std::vector<float> pt_rgb;
+        std::cout << "Path tracer: " << cs.pt_spp << " spp, max_depth=" << cs.pt_max_depth << "\n";
+        pt.render(pt_rgb, W, H, pt_cam);
+
+        const char* exrErr = nullptr;
+        if (SaveEXR(pt_rgb.data(), W, H, 3, 0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
+          std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+          FreeEXRErrorMessage(exrErr);
+        } else {
+          std::cout << "Saved: " << cs.output_path << "\n";
+        }
+
+        cs.is_running = false;
+      } else {
+
       const uint32_t N_total    = static_cast<uint32_t>(cs.total_photons);
       const uint32_t N_per_pass = static_cast<uint32_t>(cs.photons_per_pass);
       const uint32_t K          = (N_total + N_per_pass - 1) / N_per_pass;
@@ -433,6 +464,7 @@ int main(int argc, char **argv) {
       scene.upload_beams(tracer.beams());
 
       cs.is_running = false;
+      }  // end else (beam capture)
     }
 
     // Default framebuffer clear (splat result is composited later).

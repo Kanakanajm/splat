@@ -4,6 +4,11 @@ project(SplatApp LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Default to Release so the BVH and path tracer are fast out of the box.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+endif()
+
 find_package(assimp REQUIRED)
 find_package(glm REQUIRED)
 
@@ -22,6 +27,7 @@ add_executable(SplatApp
     src/point_light.cpp
     src/env_light.cpp
     src/photon_tracer.cpp
+    src/path_tracer.cpp
     src/scene.cpp
     src/scene_gl.cpp
     src/scene_config.cpp
@@ -53,6 +59,11 @@ target_include_directories(SplatApp PRIVATE
 )
 
 target_link_libraries(SplatApp PRIVATE glfw glm::glm assimp::assimp)
+
+# Enable native SIMD for tinybvh (SSE4.2 / AVX2). Safe to disable if cross-compiling.
+if(NOT MSVC)
+    target_compile_options(SplatApp PRIVATE -march=native)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)

@@ -12,6 +12,11 @@ struct CaptureState {
     char output_path[256] = "output.exr";
     bool is_running       = false;
     bool triggered        = false;
+
+    // Path tracer mode
+    bool use_path_tracer = false;
+    int  pt_spp          = 64;
+    int  pt_max_depth    = 8;
 };
 
 struct ViewState {
