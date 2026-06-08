@@ -4,3 +4,5 @@ build
 .vscode
 imgui.ini
 *.exr
+.venv
+__pycache__
