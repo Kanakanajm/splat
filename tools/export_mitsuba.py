@@ -42,11 +42,11 @@ def split_obj_groups(obj_path):
     with open(obj_path) as f:
         for line in f:
             s = line.strip()
-            if s.startswith('v '):
+            if s[:2] in ('v ', 'v\t'):
                 verts.append(s)
-            elif s.startswith('vn '):
+            elif s[:3] in ('vn ', 'vn\t'):
                 norms.append(s)
-            elif s.startswith('vt '):
+            elif s[:3] in ('vt ', 'vt\t'):
                 texes.append(s)
             elif s.startswith('g '):
                 current = {'name': s[2:].strip(), 'faces': []}

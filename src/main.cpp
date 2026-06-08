@@ -31,7 +31,6 @@
 #include <ctime>
 #include <filesystem>
 #include <iostream>
-#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -216,7 +215,13 @@ int main(int argc, char **argv) {
   glGenQueries(1, &peelQuery);
 
   auto debugUi = std::make_unique<DebugUi>(window);
-
+  {
+    const std::string stem = std::filesystem::path(scenePath).stem().string();
+    std::filesystem::create_directories("output");
+    std::snprintf(debugUi->captureState().output_path,
+                  sizeof(debugUi->captureState().output_path),
+                  "output/%s.exr", stem.c_str());
+  }
 
   lastFrame = glfwGetTime();
 
@@ -353,8 +358,34 @@ int main(int argc, char **argv) {
               }
             });
 
-          // TODO(Chunk 2/3): export scene XML and launch tools/run_mitsuba.py
-          std::cout << "[Mitsuba] comparison not yet implemented\n";
+          // Build comma-separated SPP list for Python scripts
+          std::string spp_list;
+          for (std::size_t i = 0; i < checkpoints.size(); ++i) {
+            if (i > 0) spp_list += ',';
+            spp_list += std::to_string(checkpoints[i]);
+          }
+
+          // Use the venv python by symlink path (do NOT canonicalize — it resolves to system python)
+          const std::string venv_py = (
+              std::filesystem::path(argv[0]).parent_path() / "../.venv/bin/python").string();
+
+          auto run = [](const std::string& cmd) {
+            std::cout << "$ " << cmd << "\n";
+            if (std::system(cmd.c_str()) != 0)
+              std::cerr << "[warning] command returned non-zero\n";
+          };
+
+          run(venv_py + " tools/export_mitsuba.py " + scenePath +
+              " " + out_dir + "/camera.json" +
+              " --output-dir " + out_dir +
+              " --spp " + std::to_string(cs.pt_spp) +
+              " --max-depth " + std::to_string(cs.pt_max_depth));
+
+          run(venv_py + " tools/run_mitsuba.py " + out_dir + "/scene_mitsuba.xml" +
+              " --spp-list " + spp_list +
+              " --output-dir " + out_dir);
+
+          run(venv_py + " tools/convergence_compare.py " + out_dir);
 
         } else {
           // --- Single render (original path) ---

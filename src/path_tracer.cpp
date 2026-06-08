@@ -64,7 +64,7 @@ tinybvh::bvhvec3 PathTracer::nee_surface(const tinybvh::bvhvec3& p,
             if (shadow.hit.t < dist - kEps) continue;
 
             const float Tr = sigma_t > 0.0f ? std::exp(-sigma_t * dist) : 1.0f;
-            const float fac = Tr * kInvPi * cos_theta / (dist * dist);
+            const float fac = Tr * kInvPi * kInv4Pi * cos_theta / (dist * dist);
             result.x += fac * bsdf.color.x * pl->power.x;
             result.y += fac * bsdf.color.y * pl->power.y;
             result.z += fac * bsdf.color.z * pl->power.z;
@@ -104,7 +104,7 @@ tinybvh::bvhvec3 PathTracer::nee_medium(const tinybvh::bvhvec3& p,
             if (shadow.hit.t < dist - kEps) continue;
 
             const float Tr  = sigma_t > 0.0f ? std::exp(-sigma_t * dist) : 1.0f;
-            const float fac = Tr * kInv4Pi / (dist * dist);
+            const float fac = Tr * kInv4Pi * kInv4Pi / (dist * dist);
             result.x += fac * pl->power.x;
             result.y += fac * pl->power.y;
             result.z += fac * pl->power.z;

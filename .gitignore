@@ -6,3 +6,4 @@ imgui.ini
 *.exr
 .venv
 __pycache__
+output
