@@ -26,3 +26,4 @@
 
 | Savepoint | Branch | Summary |
 |---|---|---|
+| [path_tracer_status.md](path_tracer_status.md) | `pathtracer` | PT baseline complete: MIS (point/env/area lights), `shadow_Tr`, Mitsuba exporter (volpath, media, area lights), Mitsuba runner + RMSE convergence plot. 87/87 tests. |
