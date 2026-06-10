@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <unordered_map>
 #include <vector>
 
 struct PinholeCamera;
@@ -46,6 +47,7 @@ private:
     const Scene&        scene_;
     const tinybvh::BVH& bvh_;
     std::vector<Light>  lights_;
+    std::unordered_map<uint32_t, size_t> prim_to_area_light_;  // prim → index into lights_
     int                 max_depth_;
     int                 spp_;
 };

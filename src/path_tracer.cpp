@@ -42,7 +42,14 @@ float power_heuristic(float pdf_a, float pdf_b) {
 PathTracer::PathTracer(const Scene& scene, const tinybvh::BVH& bvh,
                        std::vector<Light> lights, int max_depth, int spp)
     : scene_(scene), bvh_(bvh), lights_(std::move(lights)),
-      max_depth_(max_depth), spp_(spp) {}
+      max_depth_(max_depth), spp_(spp) {
+    for (size_t i = 0; i < lights_.size(); ++i) {
+        if (const auto* al = std::get_if<AreaLight>(&lights_[i])) {
+            for (uint32_t prim : al->prim_indices)
+                prim_to_area_light_[prim] = i;
+        }
+    }
+}
 
 tinybvh::bvhvec3 PathTracer::nee_surface(const tinybvh::bvhvec3& p,
                                           const tinybvh::bvhvec3& n,
@@ -87,6 +94,35 @@ tinybvh::bvhvec3 PathTracer::nee_surface(const tinybvh::bvhvec3& p,
             result.x += 0.5f * el->color.x * bsdf.color.x;
             result.y += 0.5f * el->color.y * bsdf.color.y;
             result.z += 0.5f * el->color.z * bsdf.color.z;
+
+        } else if (const auto* al = std::get_if<AreaLight>(&light)) {
+            const tinybvh::bvhvec3 q   = al->sample_point(rng);
+            const tinybvh::bvhvec3 dir{q.x-p.x, q.y-p.y, q.z-p.z};
+            const float dist = vec_len(dir);
+            if (dist < kEps) continue;
+            const tinybvh::bvhvec3 wi = tinybvh::tinybvh_normalize(dir);
+
+            const float cos_i = wi.x*n.x + wi.y*n.y + wi.z*n.z;
+            if (cos_i <= 0.0f) continue;
+            const float cos_l = -(wi.x*al->normal.x + wi.y*al->normal.y + wi.z*al->normal.z);
+            if (cos_l <= 0.0f) continue;
+
+            // Shadow ray aims from offset to q so the ray hits the light prim at
+            // exactly t = dist_shadow, preventing false self-occlusion.
+            const tinybvh::bvhvec3 dir_s{q.x-offset.x, q.y-offset.y, q.z-offset.z};
+            const float dist_shadow = vec_len(dir_s);
+            tinybvh::Ray shadow{offset, tinybvh::tinybvh_normalize(dir_s)};
+            bvh_.Intersect(shadow);
+            if (shadow.hit.t < dist_shadow - kEps) continue;
+
+            const float Tr      = sigma_t > 0.0f ? std::exp(-sigma_t * dist) : 1.0f;
+            const float p_light = dist * dist / (al->total_area * cos_l);
+            const float p_bsdf  = cos_i * kInvPi;
+            const float w       = power_heuristic(p_light, p_bsdf);
+            const float fac     = w * Tr * kInvPi * cos_i / p_light;
+            result.x += fac * bsdf.color.x * al->emission.x;
+            result.y += fac * bsdf.color.y * al->emission.y;
+            result.z += fac * bsdf.color.z * al->emission.z;
         }
     }
     return result;
@@ -128,6 +164,29 @@ tinybvh::bvhvec3 PathTracer::nee_medium(const tinybvh::bvhvec3& p,
             result.x += 0.5f * el->color.x;
             result.y += 0.5f * el->color.y;
             result.z += 0.5f * el->color.z;
+
+        } else if (const auto* al = std::get_if<AreaLight>(&light)) {
+            const tinybvh::bvhvec3 q   = al->sample_point(rng);
+            const tinybvh::bvhvec3 dir{q.x-p.x, q.y-p.y, q.z-p.z};
+            const float dist = vec_len(dir);
+            if (dist < kEps) continue;
+            const tinybvh::bvhvec3 wi = tinybvh::tinybvh_normalize(dir);
+
+            const float cos_l = -(wi.x*al->normal.x + wi.y*al->normal.y + wi.z*al->normal.z);
+            if (cos_l <= 0.0f) continue;
+
+            tinybvh::Ray shadow{p, wi};
+            bvh_.Intersect(shadow);
+            if (shadow.hit.t < dist - kEps) continue;  // shadow origin is p so dist is exact
+
+            const float Tr      = sigma_t > 0.0f ? std::exp(-sigma_t * dist) : 1.0f;
+            const float p_light = dist * dist / (al->total_area * cos_l);
+            const float p_bsdf  = kInv4Pi;
+            const float w       = power_heuristic(p_light, p_bsdf);
+            const float fac     = w * Tr * kInv4Pi / p_light;
+            result.x += fac * al->emission.x;
+            result.y += fac * al->emission.y;
+            result.z += fac * al->emission.z;
         }
     }
     return result;
@@ -200,6 +259,20 @@ tinybvh::bvhvec3 PathTracer::Li(tinybvh::Ray ray, uint32_t medium_id, Rng& rng) 
             const float orient = (normal.x*ray.D.x + normal.y*ray.D.y + normal.z*ray.D.z) < 0.0f
                 ? 1.0f : -1.0f;
             const tinybvh::bvhvec3 oriented_n{normal.x*orient, normal.y*orient, normal.z*orient};
+
+            // Emissive surface: add Le with MIS weight and terminate path.
+            if (const auto it = prim_to_area_light_.find(prim); it != prim_to_area_light_.end()) {
+                const auto& al = std::get<AreaLight>(lights_[it->second]);
+                const float cos_l = -(ray.D.x*al.normal.x + ray.D.y*al.normal.y + ray.D.z*al.normal.z);
+                if (cos_l > 0.0f) {
+                    const float p_light = t_hit * t_hit / (al.total_area * cos_l);
+                    const float w = prev_specular ? 1.0f : power_heuristic(prev_bsdf_pdf, p_light);
+                    Lo.x += w * weight.x * al.emission.x;
+                    Lo.y += w * weight.y * al.emission.y;
+                    Lo.z += w * weight.z * al.emission.z;
+                }
+                break;
+            }
 
             const Bsdf& bsdf = scene_.bsdf_at(prim);
             if (bsdf.kind == BsdfKind::Diffuse) {

@@ -1,5 +1,7 @@
 {
-  "env_light": { "power": [1.0, 1.0, 1.0] },
+  "lights": [
+    { "kind": "area", "instance": "light", "emission": [17.0, 12.0, 4.0] }
+  ],
   "mediums": {
   },
   "bsdfs": {
@@ -9,12 +11,12 @@
 
   },
   "instances": {
-    "leftWall": { "bsdf": "red-diffuse" } , 
-    "rightWall": { "bsdf": "green-diffuse" } , 
-    "floor": { "bsdf": "grey-diffuse" } , 
-    "ceiling": { "bsdf": "grey-diffuse" } , 
-    "backWall": { "bsdf": "grey-diffuse" } , 
-    "tallBox": { "bsdf": "grey-diffuse" } , 
+    "leftWall": { "bsdf": "red-diffuse" } ,
+    "rightWall": { "bsdf": "green-diffuse" } ,
+    "floor": { "bsdf": "grey-diffuse" } ,
+    "ceiling": { "bsdf": "grey-diffuse" } ,
+    "backWall": { "bsdf": "grey-diffuse" } ,
+    "tallBox": { "bsdf": "grey-diffuse" } ,
     "shortBox": { "bsdf": "grey-diffuse" }
   }
 }

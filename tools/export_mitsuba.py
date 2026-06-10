@@ -227,8 +227,18 @@ def export_mitsuba(obj_path, camera_json_path, output_dir, spp=256, max_depth=8)
         ET.SubElement(emitter, 'rgb', name='intensity',
                       value=_rgb_str(intensity))
 
+    # Pre-collect area lights for embedding inside their shape below
+    area_lights_by_instance = {
+        ld['instance']: ld
+        for ld in scene.get('lights', [])
+        if ld.get('kind') == 'area'
+    }
+
     for light_def in ([scene['light']] if 'light' in scene else []) + scene.get('lights', []):
-        _add_point_light(light_def)
+        kind = light_def.get('kind', 'point')
+        if kind == 'point':
+            _add_point_light(light_def)
+        # 'area' lights are embedded inside their shape element below
 
     if 'env_light' in scene:
         el = scene['env_light']
@@ -253,6 +263,11 @@ def export_mitsuba(obj_path, camera_json_path, output_dir, spp=256, max_depth=8)
         else:
             bsdf_el = ET.SubElement(shape, 'bsdf', type='diffuse')
             ET.SubElement(bsdf_el, 'rgb', name='reflectance', value='0.8 0.8 0.8')
+
+        if grp_name in area_lights_by_instance:
+            al = area_lights_by_instance[grp_name]
+            em = ET.SubElement(shape, 'emitter', type='area')
+            ET.SubElement(em, 'rgb', name='radiance', value=_rgb_str(al['emission']))
 
     _indent(root)
     out_path = output_dir / 'scene_mitsuba.xml'

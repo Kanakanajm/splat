@@ -15,6 +15,35 @@
 
 namespace {
 
+// Build an AreaLight from a specific instance in the model.
+AreaLight make_area_light(const RayModel& model, uint32_t instance_id,
+                          tinybvh::bvhvec3 emission) {
+    AreaLight al;
+    al.emission   = emission;
+    al.total_area = 0.0f;
+    bool normal_set = false;
+    const auto& tris = model.triangles();
+    for (uint32_t p = 0; p < model.triangle_count(); ++p) {
+        if (model.instance_id(p) != instance_id) continue;
+        AreaLight::Tri t;
+        t.v0 = {tris[p*3+0].x, tris[p*3+0].y, tris[p*3+0].z};
+        t.v1 = {tris[p*3+1].x, tris[p*3+1].y, tris[p*3+1].z};
+        t.v2 = {tris[p*3+2].x, tris[p*3+2].y, tris[p*3+2].z};
+        const tinybvh::bvhvec3 e1{t.v1.x-t.v0.x, t.v1.y-t.v0.y, t.v1.z-t.v0.z};
+        const tinybvh::bvhvec3 e2{t.v2.x-t.v0.x, t.v2.y-t.v0.y, t.v2.z-t.v0.z};
+        const tinybvh::bvhvec3 cr = tinybvh::tinybvh_cross(e1, e2);
+        const float len = std::sqrt(cr.x*cr.x + cr.y*cr.y + cr.z*cr.z);
+        al.total_area += 0.5f * len;
+        if (!normal_set && len > 1e-8f) {
+            al.normal    = tinybvh::tinybvh_normalize(cr);
+            normal_set   = true;
+        }
+        al.tris.push_back(t);
+        al.prim_indices.push_back(p);
+    }
+    return al;
+}
+
 // Axis-aligned closed box [lo, hi] as a fat-triangle buffer (12 triangles).
 std::vector<tinybvh::bvhvec4> make_box(tinybvh::bvhvec3 lo, tinybvh::bvhvec3 hi) {
     const tinybvh::bvhvec3 c[8] = {
@@ -40,6 +69,27 @@ std::vector<tinybvh::bvhvec4> make_zquad(float z0, float half = 5.0f) {
     return {
         p(-half,-half), p(half,-half), p(half, half),
         p(-half,-half), p(half, half), p(-half, half),
+    };
+}
+
+// A quad in the x-z plane at y = y0, facing +y (normal = (0,+1,0)).
+std::vector<tinybvh::bvhvec4> make_yquad(float y0, float half = 5.0f) {
+    // v1-v0=(0,0,2h), v2-v0=(2h,0,2h) → cross.y = +4h² → +y normal.
+    auto p = [&](float x, float z) -> tinybvh::bvhvec4 { return {x, y0, z, 0.f}; };
+    return {
+        p(-half,-half), p(-half, half), p( half, half),
+        p(-half,-half), p( half, half), p( half,-half),
+    };
+}
+
+// A 2×2 quad at y=y0 in the x-z plane facing -y (normal = (0,-1,0)).
+// Used for area lights above the y=0 floor.
+std::vector<tinybvh::bvhvec4> make_yquad_down(float y0, float half = 1.0f) {
+    // Reverse winding of make_yquad to get -y normal.
+    auto p = [&](float x, float z) -> tinybvh::bvhvec4 { return {x, y0, z, 0.f}; };
+    return {
+        p(-half,-half), p( half, half), p(-half, half),
+        p(-half,-half), p( half,-half), p( half, half),
     };
 }
 
@@ -381,4 +431,83 @@ TEST_CASE("PathTracer: render_checkpointed with empty checkpoints does nothing",
     pt.render_checkpointed(1, 1, cam, {},
         [&](int, const std::vector<float>&) { ++calls; });
     CHECK(calls == 0);
+}
+
+// ─── Step 4: area lights ───────────────────────────────────────────────────────
+
+TEST_CASE("PathTracer [S4]: camera ray hitting area light returns emission",
+          "[path_tracer][area_light]") {
+    // Area light (instance 0): 10x10 quad at z=1, normal=+z.
+    // Diffuse surface (instance 1): 10x10 quad at z=0.
+    // Camera at z=2 looking at z=0: the central ray hits the light at z=1 first.
+    // prev_specular=true on camera ray → w=1 → Lo = emission.
+    auto light_verts = make_zquad(1.0f);
+    auto surf_verts  = make_zquad(0.0f);
+    std::vector<tinybvh::bvhvec4> verts;
+    verts.insert(verts.end(), light_verts.begin(), light_verts.end());
+    verts.insert(verts.end(), surf_verts.begin(), surf_verts.end());
+    std::vector<uint32_t> inst = {0u, 0u, 1u, 1u};
+    RayModel model{std::move(verts), std::move(inst), 2u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+
+    Scene scene{model};
+    scene.set_bsdf(1u, Bsdf{BsdfKind::Diffuse, 1.0f, {1.0f, 1.0f, 1.0f}});
+    scene.set_instance_bsdf(1u, 1u);
+
+    auto al = make_area_light(model, 0u, {1.0f, 1.0f, 1.0f});
+    PathTracer pt{scene, bvh, {Light{std::move(al)}}, /*max_depth=*/4, /*spp=*/1};
+
+    PinholeCamera cam{
+        .eye={0.f,0.f,2.f}, .target={0.f,0.f,0.f}, .up={0.f,1.f,0.f},
+        .fov_y=0.01f, .width=1u, .height=1u,
+    };
+    std::vector<float> out;
+    pt.render(out, 1, 1, cam);
+
+    REQUIRE(out[0] == Catch::Approx(1.0f).margin(1e-4f));
+    REQUIRE(out[1] == Catch::Approx(1.0f).margin(1e-4f));
+    REQUIRE(out[2] == Catch::Approx(1.0f).margin(1e-4f));
+}
+
+TEST_CASE("PathTracer [S4]: area light illuminates diffuse surface (analytic check)",
+          "[path_tracer][area_light]") {
+    // Area light (instance 0): 2x2 quad at y=3, normal=(0,-1,0), Le=(1,1,1).
+    // Diffuse surface (instance 1): 10x10 quad at y=0, normal=(0,+1,0), albedo=1.
+    // Camera at (0,0.5,0) looking at (0,0,0): hits y=0 floor, doesn't intersect light.
+    // Analytic direct illumination at (0,0,0):
+    //   Lo = (1/π) * ∫∫_{[-1,1]²} 9/(x²+z²+9)² dx dz ≈ 0.1233
+    // (numerically: Simpson's rule gives integral ≈ 0.387, Lo = 0.387/π ≈ 0.1232)
+    constexpr float kExpected = 0.1233f;
+    constexpr int   kSpp      = 5000;
+
+    auto light_verts = make_yquad_down(3.0f, 1.0f);
+    auto surf_verts  = make_yquad(0.0f, 5.0f);
+    std::vector<tinybvh::bvhvec4> verts;
+    verts.insert(verts.end(), light_verts.begin(), light_verts.end());
+    verts.insert(verts.end(), surf_verts.begin(), surf_verts.end());
+    std::vector<uint32_t> inst = {0u, 0u, 1u, 1u};
+    RayModel model{std::move(verts), std::move(inst), 2u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+
+    Scene scene{model};
+    scene.set_bsdf(1u, Bsdf{BsdfKind::Diffuse, 1.0f, {1.0f, 1.0f, 1.0f}});
+    scene.set_instance_bsdf(1u, 1u);
+
+    auto al = make_area_light(model, 0u, {1.0f, 1.0f, 1.0f});
+    PathTracer pt{scene, bvh, {Light{std::move(al)}}, /*max_depth=*/2, kSpp};
+
+    // Camera at y=0.5 looking at origin: central ray hits y=0 at (0,0,0).
+    PinholeCamera cam{
+        .eye={0.f,0.5f,0.f}, .target={0.f,0.f,0.f}, .up={0.f,0.f,1.f},
+        .fov_y=0.01f, .width=1u, .height=1u,
+    };
+    std::vector<float> out;
+    pt.render(out, 1, 1, cam);
+
+    INFO("Lo.r=" << out[0] << " expected=" << kExpected);
+    REQUIRE(out[0] == Catch::Approx(kExpected).epsilon(0.05f));
+    REQUIRE(out[1] == Catch::Approx(kExpected).epsilon(0.05f));
+    REQUIRE(out[2] == Catch::Approx(kExpected).epsilon(0.05f));
 }
