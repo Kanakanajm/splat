@@ -1,9 +1,11 @@
 #include "photon_mapper.hpp"
 
 #include "bsdf.hpp"
+#include "direct_lighting.hpp"
 #include "medium.hpp"
 #include "photon_tracer.hpp"
 #include "ray_camera.hpp"
+#include "ray_model.hpp"
 #include "sampling.hpp"
 
 #include <cmath>
@@ -13,6 +15,14 @@
 
 namespace {
 constexpr float kPi = 3.14159265358979f;
+
+tinybvh::bvhvec3 face_normal(const RayModel& model, uint32_t prim) {
+    const auto& tris = model.triangles();
+    const tinybvh::bvhvec3 v0{tris[prim*3+0].x, tris[prim*3+0].y, tris[prim*3+0].z};
+    const tinybvh::bvhvec3 v1{tris[prim*3+1].x, tris[prim*3+1].y, tris[prim*3+1].z};
+    const tinybvh::bvhvec3 v2{tris[prim*3+2].x, tris[prim*3+2].y, tris[prim*3+2].z};
+    return tinybvh::tinybvh_normalize(tinybvh::tinybvh_cross(v1 - v0, v2 - v0));
+}
 }  // namespace
 
 PhotonMapper::PhotonMapper(const Scene& scene, const tinybvh::BVH& bvh,
@@ -60,6 +70,14 @@ tinybvh::bvhvec3 PhotonMapper::gather(tinybvh::Ray ray, uint32_t medium_id,
                 ray.O.z + t_med * ray.D.z,
             };
 
+            // Direct volume lighting at first scatter via NEE.
+            if (d == 0) {
+                const auto ld = dl::nee_medium(scene_, bvh_, lights_, x, medium_id, rng);
+                L.x += weight.x * ld.x;
+                L.y += weight.y * ld.y;
+                L.z += weight.z * ld.z;
+            }
+
             // L_vol = σ_s · k_vol · p_isotropic · Σ φ_j
             // k_vol = 3/(4π r³),  p_isotropic = 1/(4π)
             const auto nearby = vol_tree_.radius_search(x, r_vol_);
@@ -96,8 +114,12 @@ tinybvh::bvhvec3 PhotonMapper::gather(tinybvh::Ray ray, uint32_t medium_id,
             weight.x *= Tr; weight.y *= Tr; weight.z *= Tr;
         }
 
-        const uint32_t prim = ray.hit.prim;
-        const Bsdf&    bsdf = scene_.bsdf(scene_.bsdf_id_at(prim));
+        const uint32_t prim   = ray.hit.prim;
+        const tinybvh::bvhvec3 normal = face_normal(scene_.model(), prim);
+        // Skip back faces — ray hits the wrong side of the surface.
+        if ((ray.D.x*normal.x + ray.D.y*normal.y + ray.D.z*normal.z) >= 0.f) break;
+
+        const Bsdf& bsdf = scene_.bsdf(scene_.bsdf_id_at(prim));
         if (bsdf.kind != BsdfKind::Diffuse) break;
 
         const tinybvh::bvhvec3 p{
@@ -105,6 +127,14 @@ tinybvh::bvhvec3 PhotonMapper::gather(tinybvh::Ray ray, uint32_t medium_id,
             ray.O.y + t_hit * ray.D.y,
             ray.O.z + t_hit * ray.D.z,
         };
+
+        // Direct surface lighting at first camera bounce via NEE.
+        if (d == 0) {
+            const auto ld = dl::nee_surface(scene_, bvh_, lights_, p, normal, bsdf, medium_id, rng);
+            L.x += weight.x * ld.x;
+            L.y += weight.y * ld.y;
+            L.z += weight.z * ld.z;
+        }
 
         // L_surf = f_r · k_surf · Σ φ_j   where f_r = albedo/π, k_surf = 1/(π r²)
         const auto nearby = surf_tree_.radius_search(p, r_surf_);
