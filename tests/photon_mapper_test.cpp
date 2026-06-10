@@ -45,8 +45,13 @@ TEST_CASE("PhotonMapper: emit stores surface photons for diffuse scene",
     Scene scene{model};  // default BSDF is Diffuse
     PointLight light{{0.f,0.f,0.f}};
 
+    PinholeCamera cam; cam.eye={0.f,0.f,0.f}; cam.target={0.f,0.f,-1.f};
+    cam.up={0.f,1.f,0.f}; cam.fov_y=0.8f; cam.width=1; cam.height=1;
+
     PhotonMapper mapper{scene, bvh, {Light{light}}, /*n_photons=*/10000,
                         /*r_surf=*/0.1f, /*r_vol=*/0.1f, /*max_cam_depth=*/4};
+    std::vector<float> out;
+    mapper.render(out, 1, 1, cam);
 
     REQUIRE(mapper.surf_photon_count() > 0u);
     REQUIRE(mapper.vol_photon_count()  == 0u);
@@ -63,8 +68,13 @@ TEST_CASE("PhotonMapper: emit stores volume photons for participating medium",
     scene.set_medium(1u, Medium{/*sigma_s=*/10.f, /*sigma_a=*/0.f});
     PointLight light{{0.f,0.f,0.f},{1.f,1.f,1.f},/*medium_id=*/1u};
 
+    PinholeCamera cam; cam.eye={0.f,0.f,0.f}; cam.target={0.f,0.f,-1.f};
+    cam.up={0.f,1.f,0.f}; cam.fov_y=0.8f; cam.width=1; cam.height=1;
+
     PhotonMapper mapper{scene, bvh, {Light{light}}, /*n_photons=*/10000,
                         /*r_surf=*/0.1f, /*r_vol=*/0.1f, /*max_cam_depth=*/4};
+    std::vector<float> out;
+    mapper.render(out, 1, 1, cam, /*start_medium=*/1u);
 
     REQUIRE(mapper.vol_photon_count() > 0u);
 }
@@ -79,8 +89,13 @@ TEST_CASE("PhotonMapper: no volume photons in vacuum scene",
     Scene scene{model};
     PointLight light{{0.f,0.f,0.f}};
 
+    PinholeCamera cam; cam.eye={0.f,0.f,0.f}; cam.target={0.f,0.f,-1.f};
+    cam.up={0.f,1.f,0.f}; cam.fov_y=0.8f; cam.width=1; cam.height=1;
+
     PhotonMapper mapper{scene, bvh, {Light{light}}, /*n_photons=*/5000,
                         /*r_surf=*/0.1f, /*r_vol=*/0.1f, /*max_cam_depth=*/4};
+    std::vector<float> out;
+    mapper.render(out, 1, 1, cam);
 
     REQUIRE(mapper.vol_photon_count() == 0u);
 }
@@ -213,11 +228,11 @@ TEST_CASE("PhotonMapper: combined scene has volume + surface contribution",
                         /*n_photons=*/50000, /*r_surf=*/0.3f, /*r_vol=*/0.3f,
                         /*max_cam_depth=*/8};
 
-    REQUIRE(mapper.surf_photon_count() > 0u);
-    REQUIRE(mapper.vol_photon_count()  > 0u);
-
     std::vector<float> out;
     mapper.render(out, 4, 4, cam, /*start_medium=*/1u);
+
+    REQUIRE(mapper.surf_photon_count() > 0u);
+    REQUIRE(mapper.vol_photon_count()  > 0u);
 
     int nonzero = 0;
     for (float v : out) if (v > 0.f) ++nonzero;
@@ -233,10 +248,16 @@ TEST_CASE("PhotonMapper: surface photon count scales with n_photons",
     Scene scene{model};
     PointLight light{{0.f,0.f,0.f}};
 
+    PinholeCamera cam; cam.eye={0.f,0.f,0.f}; cam.target={0.f,0.f,-1.f};
+    cam.up={0.f,1.f,0.f}; cam.fov_y=0.8f; cam.width=1; cam.height=1;
+
     PhotonMapper small_map{scene, bvh, {Light{light}}, /*n_photons=*/1000,
                            0.1f, 0.1f, 4};
     PhotonMapper large_map{scene, bvh, {Light{light}}, /*n_photons=*/10000,
                            0.1f, 0.1f, 4};
+    std::vector<float> tmp;
+    small_map.render(tmp, 1, 1, cam);
+    large_map.render(tmp, 1, 1, cam);
 
     // More photons → more stored points (closed box, photons always hit something).
     REQUIRE(large_map.surf_photon_count() > small_map.surf_photon_count());

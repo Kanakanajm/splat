@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 
 namespace {
@@ -16,18 +17,16 @@ constexpr float kPi = 3.14159265358979f;
 
 PhotonMapper::PhotonMapper(const Scene& scene, const tinybvh::BVH& bvh,
                            std::vector<Light> lights,
-                           int n_photons, float r_surf, float r_vol, int max_cam_depth)
+                           int n_photons, float r_surf, float r_vol,
+                           int max_cam_depth, int max_emit_depth)
     : scene_(scene), bvh_(bvh), lights_(std::move(lights))
     , n_photons_(n_photons), r_surf_(r_surf), r_vol_(r_vol)
-    , max_cam_depth_(max_cam_depth)
-{
-    Rng rng{0xCAFEBABEu};
-    emit(rng);
-}
+    , max_cam_depth_(max_cam_depth), max_emit_depth_(max_emit_depth)
+{}
 
 void PhotonMapper::emit(Rng& rng) {
     PhotonTracer tracer{scene_, bvh_, lights_};
-    tracer.trace(static_cast<uint32_t>(n_photons_), /*max_depth=*/20, rng);
+    tracer.trace(static_cast<uint32_t>(n_photons_), static_cast<uint32_t>(max_emit_depth_), rng);
     surf_tree_.build(tracer.points());
     vol_tree_.build(tracer.vol_points());
 }
@@ -127,20 +126,71 @@ tinybvh::bvhvec3 PhotonMapper::gather(tinybvh::Ray ray, uint32_t medium_id,
 }
 
 void PhotonMapper::render(std::vector<float>& out, int width, int height,
-                          const PinholeCamera& cam, uint32_t start_medium) const {
+                          const PinholeCamera& cam, uint32_t start_medium, int spp) {
     out.assign(static_cast<std::size_t>(width * height * 3), 0.0f);
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            Rng rng{static_cast<uint64_t>(y * width + x)};
-            tinybvh::Ray ray = cam.generate_ray(
-                static_cast<uint32_t>(x), static_cast<uint32_t>(y));
-            const auto L = gather(ray, start_medium, 0, rng);
-            const int idx = (y * width + x) * 3;
-            out[idx + 0] = L.x;
-            out[idx + 1] = L.y;
-            out[idx + 2] = L.z;
+    const int n = std::max(1, spp);
+    for (int s = 0; s < n; ++s) {
+        Rng emit_rng{static_cast<uint64_t>(s) * 0x9E3779B97F4A7C15ULL};
+        emit(emit_rng);
+
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                Rng rng{static_cast<uint64_t>(y * width + x) * static_cast<uint64_t>(n) + static_cast<uint64_t>(s)};
+                tinybvh::Ray ray = cam.generate_ray(
+                    static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                const auto L = gather(ray, start_medium, 0, rng);
+                const int idx = (y * width + x) * 3;
+                out[idx + 0] += L.x;
+                out[idx + 1] += L.y;
+                out[idx + 2] += L.z;
+            }
         }
-        std::cout << "\r[PM] row " << (y + 1) << " / " << height << std::flush;
+        std::cout << "\r[PM] spp " << (s + 1) << "/" << n << std::flush;
+    }
+    std::cout << "\n";
+    const float inv = 1.f / static_cast<float>(n);
+    for (float& v : out) v *= inv;
+}
+
+void PhotonMapper::render_checkpointed(int width, int height, const PinholeCamera& cam,
+                                       const std::vector<int>& checkpoints,
+                                       const CheckpointFn& on_checkpoint,
+                                       uint32_t start_medium) {
+    if (checkpoints.empty()) return;
+
+    const int    total = checkpoints.back();
+    const size_t npix  = static_cast<size_t>(width * height * 3);
+    std::vector<float> accum(npix, 0.0f);
+    std::vector<float> out(npix);
+
+    int ci = 0;
+    for (int s = 0; s < total; ++s) {
+        Rng emit_rng{static_cast<uint64_t>(s) * 0x9E3779B97F4A7C15ULL};
+        emit(emit_rng);
+
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                Rng rng{(static_cast<uint64_t>(y * width + x) << 20)
+                        | static_cast<uint64_t>(s)};
+                tinybvh::Ray ray = cam.generate_ray(
+                    static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                const auto L = gather(ray, start_medium, 0, rng);
+                const int idx = (y * width + x) * 3;
+                accum[idx + 0] += L.x;
+                accum[idx + 1] += L.y;
+                accum[idx + 2] += L.z;
+            }
+        }
+
+        const int done = s + 1;
+        std::cout << "\r[PM] spp " << done << " / " << total << std::flush;
+
+        if (ci < static_cast<int>(checkpoints.size()) && done == checkpoints[ci]) {
+            const float inv = 1.0f / static_cast<float>(done);
+            for (size_t i = 0; i < npix; ++i) out[i] = accum[i] * inv;
+            on_checkpoint(done, out);
+            ++ci;
+        }
     }
     std::cout << "\n";
 }

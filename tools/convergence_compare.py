@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-Compute per-checkpoint RMSE between pt_sppNNNN.exr and mit_sppNNNN.exr,
-then save a log-log convergence plot as convergence.png.
+Compute per-checkpoint RMSE and save a log-log convergence plot.
+
+Auto-detects comparison mode from files present in output_dir:
+
+  pt_spp*.exr  + mit_spp*.exr  → PT vs Mitsuba   (paired by SPP)
+  pm_spp*.exr  + mit_spp*.exr  → PM vs Mitsuba   (paired by SPP)
+  pm_spp*.exr  + pt_spp*.exr   → PM vs PathTracer (paired by SPP)
 
 Usage:
     python tools/convergence_compare.py <output_dir>
 """
 
-import argparse
 import re
 import sys
 from pathlib import Path
@@ -29,49 +33,72 @@ def rmse(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sqrt(np.mean((a - b) ** 2)))
 
 
-def find_pairs(output_dir: Path) -> list[tuple[int, Path, Path]]:
-    pt_files = {int(m.group(1)): p
-                for p in output_dir.glob("pt_spp*.exr")
-                if (m := re.fullmatch(r"pt_spp(\d+)\.exr", p.name))}
-    mit_files = {int(m.group(1)): p
-                 for p in output_dir.glob("mit_spp*.exr")
-                 if (m := re.fullmatch(r"mit_spp(\d+)\.exr", p.name))}
-    common = sorted(set(pt_files) & set(mit_files))
-    return [(spp, pt_files[spp], mit_files[spp]) for spp in common]
+def find_spp_files(output_dir: Path, prefix: str) -> dict[int, Path]:
+    pat = re.compile(rf"{re.escape(prefix)}(\d+)\.exr")
+    return {int(m.group(1)): p
+            for p in output_dir.glob(f"{prefix}*.exr")
+            if (m := pat.fullmatch(p.name))}
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Convergence RMSE comparison")
-    parser.add_argument("output_dir", help="Directory containing pt/mit EXR files")
-    args = parser.parse_args()
+def find_pairs(a: dict, b: dict) -> list[tuple[int, Path, Path]]:
+    common = sorted(set(a) & set(b))
+    return [(spp, a[spp], b[spp]) for spp in common]
 
-    out = Path(args.output_dir)
-    pairs = find_pairs(out)
-    if not pairs:
-        print("No matching pt_sppNNNN.exr / mit_sppNNNN.exr pairs found.", file=sys.stderr)
-        sys.exit(1)
 
-    spps, rmses_pt, rmses_mit = [], [], []
-    for spp, pt_path, mit_path in pairs:
-        pt_img  = load_exr(str(pt_path))
-        mit_img = load_exr(str(mit_path))
-        r = rmse(pt_img, mit_img)
+def plot_rmse(pairs: list, xlabel: str, label: str, out: Path, title: str) -> None:
+    xs, ys = [], []
+    for spp, pa, pb in pairs:
+        r = rmse(load_exr(str(pa)), load_exr(str(pb)))
         print(f"spp={spp:4d}  RMSE={r:.6f}")
-        spps.append(spp)
-        rmses_pt.append(r)
+        xs.append(spp)
+        ys.append(r)
 
     fig, ax = plt.subplots()
-    ax.loglog(spps, rmses_pt, marker="o", label="Ours vs Mitsuba3")
-    ax.set_xlabel("SPP")
+    ax.loglog(xs, ys, marker="o", label=label)
+    ax.set_xlabel(xlabel)
     ax.set_ylabel("RMSE")
-    ax.set_title("Convergence comparison")
+    ax.set_title(title)
     ax.legend()
     ax.grid(True, which="both", ls="--", alpha=0.5)
-
     plot_path = out / "convergence.png"
     fig.savefig(str(plot_path), dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {plot_path}")
+
+
+def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="Convergence RMSE comparison")
+    parser.add_argument("output_dir", help="Directory containing EXR checkpoints")
+    args = parser.parse_args()
+
+    out = Path(args.output_dir)
+
+    pt  = find_spp_files(out, "pt_spp")
+    mit = find_spp_files(out, "mit_spp")
+    pm  = find_spp_files(out, "pm_spp")
+
+    if pm and pt:
+        pairs = find_pairs(pm, pt)
+        if not pairs:
+            print("No matching pm_spp / pt_spp pairs found.", file=sys.stderr)
+            sys.exit(1)
+        plot_rmse(pairs, "SPP", "PM vs PathTracer", out, "Photon Mapper vs Path Tracer")
+    elif pm and mit:
+        pairs = find_pairs(pm, mit)
+        if not pairs:
+            print("No matching pm_spp / mit_spp pairs found.", file=sys.stderr)
+            sys.exit(1)
+        plot_rmse(pairs, "SPP", "PM vs Mitsuba", out, "Photon Mapper vs Mitsuba")
+    elif pt and mit:
+        pairs = find_pairs(pt, mit)
+        if not pairs:
+            print("No matching pt_spp / mit_spp pairs found.", file=sys.stderr)
+            sys.exit(1)
+        plot_rmse(pairs, "SPP", "Ours vs Mitsuba3", out, "Convergence comparison")
+    else:
+        print("No recognised EXR checkpoint pairs found in " + str(out), file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

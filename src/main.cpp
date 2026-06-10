@@ -17,6 +17,7 @@
 #include "scene.hpp"
 #include "scene_config.hpp"
 #include "photon_tracer.hpp"
+#include "photon_mapper.hpp"
 #include "path_tracer.hpp"
 #include "ray_camera.hpp"
 #include "random.hpp"
@@ -332,8 +333,8 @@ int main(int argc, char **argv) {
             .height = static_cast<uint32_t>(H),
         };
 
-        if (cs.compare_with_mitsuba) {
-          // --- Checkpointed render with Mitsuba comparison ---
+        if (cs.compare_reference > 0) {
+          // --- Checkpointed render with reference comparison ---
           const std::string out_dir = make_output_dir(scenePath);
           std::filesystem::create_directories(out_dir);
 
@@ -375,17 +376,19 @@ int main(int argc, char **argv) {
               std::cerr << "[warning] command returned non-zero\n";
           };
 
-          run(venv_py + " tools/export_mitsuba.py " + scenePath +
-              " " + out_dir + "/camera.json" +
-              " --output-dir " + out_dir +
-              " --spp " + std::to_string(cs.pt_spp) +
-              " --max-depth " + std::to_string(cs.pt_max_depth));
+          if (cs.compare_reference == 1) {
+            run(venv_py + " tools/export_mitsuba.py " + scenePath +
+                " " + out_dir + "/camera.json" +
+                " --output-dir " + out_dir +
+                " --spp " + std::to_string(cs.pt_spp) +
+                " --max-depth " + std::to_string(cs.pt_max_depth));
 
-          run(venv_py + " tools/run_mitsuba.py " + out_dir + "/scene_mitsuba.xml" +
-              " --spp-list " + spp_list +
-              " --output-dir " + out_dir);
+            run(venv_py + " tools/run_mitsuba.py " + out_dir + "/scene_mitsuba.xml" +
+                " --spp-list " + spp_list +
+                " --output-dir " + out_dir);
 
-          run(venv_py + " tools/convergence_compare.py " + out_dir);
+            run(venv_py + " tools/convergence_compare.py " + out_dir);
+          }
 
         } else {
           // --- Single render (original path) ---
@@ -401,6 +404,118 @@ int main(int argc, char **argv) {
           } else {
             std::cout << "Saved: " << cs.output_path << "\n";
           }
+        }
+
+        cs.is_running = false;
+      } else if (cs.use_photon_mapper) {
+        // --- Photon Mapper capture ---
+        const int W = framebufferWidth, H = framebufferHeight;
+        PinholeCamera pm_cam{
+            .eye    = {camera.Position.x, camera.Position.y, camera.Position.z},
+            .target = {camera.Position.x + camera.Front.x,
+                       camera.Position.y + camera.Front.y,
+                       camera.Position.z + camera.Front.z},
+            .up     = {camera.Up.x, camera.Up.y, camera.Up.z},
+            .fov_y  = glm::radians(camera.Zoom),
+            .width  = static_cast<uint32_t>(W),
+            .height = static_cast<uint32_t>(H),
+        };
+
+        const std::string venv_py = (
+            std::filesystem::path(argv[0]).parent_path() / "../.venv/bin/python").string();
+        auto run = [](const std::string& cmd) {
+          std::cout << "$ " << cmd << "\n";
+          if (std::system(cmd.c_str()) != 0)
+            std::cerr << "[warning] command returned non-zero\n";
+        };
+
+        auto save_exr = [&](const std::vector<float>& buf, const char* path) {
+          const char* exrErr = nullptr;
+          if (SaveEXR(buf.data(), W, H, 3, 0, path, &exrErr) != TINYEXR_SUCCESS) {
+            std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+            FreeEXRErrorMessage(exrErr);
+          } else {
+            std::cout << "Saved: " << path << "\n";
+          }
+        };
+
+        if (cs.compare_reference > 0) {
+          // --- Checkpointed PM render (SPP is the convergence axis, n_photons fixed) ---
+          const std::string out_dir = make_output_dir(scenePath);
+          std::filesystem::create_directories(out_dir);
+          pm_cam.save_json(out_dir + "/camera.json");
+          std::cout << "Output dir: " << out_dir << "\n";
+
+          const int  n_cp        = std::max(1, std::min(cs.pm_num_checkpoints, cs.pm_spp));
+          const auto checkpoints = generate_checkpoints(cs.pm_spp, n_cp);
+
+          PhotonMapper pm{scene, bvh, lights,
+                          cs.pm_n_photons, cs.pm_r_surf, cs.pm_r_vol,
+                          cs.pm_max_cam_depth, cs.pm_max_emit_depth};
+          std::cout << "[PM] n_photons=" << cs.pm_n_photons
+                    << "  max_cam=" << cs.pm_max_cam_depth
+                    << "  max_emit=" << cs.pm_max_emit_depth << "\n";
+
+          pm.render_checkpointed(W, H, pm_cam, checkpoints,
+            [&](int spp, const std::vector<float>& buf) {
+              char fname[512];
+              std::snprintf(fname, sizeof(fname), "%s/pm_spp%04d.exr", out_dir.c_str(), spp);
+              const char* exrErr = nullptr;
+              if (SaveEXR(buf.data(), W, H, 3, 0, fname, &exrErr) != TINYEXR_SUCCESS) {
+                std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+                FreeEXRErrorMessage(exrErr);
+              } else {
+                std::cout << "Saved: " << fname << "\n";
+              }
+            });
+
+          // Build comma-separated SPP list for Python scripts
+          std::string spp_list;
+          for (std::size_t i = 0; i < checkpoints.size(); ++i) {
+            if (i > 0) spp_list += ',';
+            spp_list += std::to_string(checkpoints[i]);
+          }
+
+          // Generate reference checkpoints at the same SPP values.
+          // compare_depth = pm_max_emit_depth + pm_max_cam_depth (user-editable in UI)
+          const int cmp_depth = std::max(1, cs.pm_compare_depth);
+          if (cs.compare_reference == 1) {
+            run(venv_py + " tools/export_mitsuba.py " + scenePath +
+                " " + out_dir + "/camera.json" +
+                " --output-dir " + out_dir +
+                " --spp " + std::to_string(cs.pm_spp) +
+                " --max-depth " + std::to_string(cmp_depth));
+            run(venv_py + " tools/run_mitsuba.py " + out_dir + "/scene_mitsuba.xml" +
+                " --spp-list " + spp_list +
+                " --output-dir " + out_dir);
+          } else {
+            const int cmp_depth_pt = std::max(1, cs.pm_compare_depth);
+            PathTracer pt_ref{scene, bvh, lights, cmp_depth_pt, cs.pm_spp};
+            std::cout << "[PT ref] " << cs.pm_spp << " spp, max_depth=" << cmp_depth_pt << "\n";
+            pt_ref.render_checkpointed(W, H, pm_cam, checkpoints,
+              [&](int spp, const std::vector<float>& buf) {
+                char fname[512];
+                std::snprintf(fname, sizeof(fname), "%s/pt_spp%04d.exr", out_dir.c_str(), spp);
+                const char* exrErr = nullptr;
+                if (SaveEXR(buf.data(), W, H, 3, 0, fname, &exrErr) != TINYEXR_SUCCESS) {
+                  std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+                  FreeEXRErrorMessage(exrErr);
+                } else {
+                  std::cout << "Saved: " << fname << "\n";
+                }
+              });
+          }
+
+          run(venv_py + " tools/convergence_compare.py " + out_dir);
+
+        } else {
+          // --- Single PM render ---
+          PhotonMapper pm{scene, bvh, lights,
+                          cs.pm_n_photons, cs.pm_r_surf, cs.pm_r_vol, cs.pm_max_cam_depth};
+          std::vector<float> pm_rgb;
+          std::cout << "[PM] n_photons=" << cs.pm_n_photons << "\n";
+          pm.render(pm_rgb, W, H, pm_cam, 0u, cs.pm_spp);
+          save_exr(pm_rgb, cs.output_path);
         }
 
         cs.is_running = false;

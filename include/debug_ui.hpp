@@ -13,14 +13,27 @@ struct CaptureState {
     bool is_running       = false;
     bool triggered        = false;
 
-    // Path tracer mode
-    bool use_path_tracer          = false;
+    // Render mode (mutually exclusive)
+    bool use_path_tracer    = false;
+    bool use_photon_mapper  = false;
+
+    // Path tracer params
     int  pt_spp                   = 64;
     int  pt_max_depth             = 8;
-
-    // Mitsuba comparison (PT mode only)
-    bool compare_with_mitsuba     = false;
     int  pt_num_checkpoints       = 6;
+
+    // Photon mapper params
+    int   pm_n_photons        = 100000;
+    float pm_r_surf           = 0.05f;
+    float pm_r_vol            = 0.05f;
+    int   pm_max_cam_depth    = 3;
+    int   pm_max_emit_depth   = 5;
+    int   pm_spp              = 4;
+    int   pm_num_checkpoints  = 5;
+    int   pm_compare_depth    = 8;  // default = pm_max_emit_depth + pm_max_cam_depth
+
+    // Reference comparison: 0=None, 1=Mitsuba, 2=PathTracer
+    int  compare_reference        = 0;
 
     // Camera inspector
     char camera_json_path[256]    = "";
