@@ -588,6 +588,86 @@ TEST_CASE("PhotonTracer: stored point incoming_dir is unit-length",
     }
 }
 
+// ─── VolumePhoton (vol_points) ────────────────────────────────────────────────
+
+TEST_CASE("PhotonTracer: vol_points count equals beams count", "[photon_tracer][vol_points]") {
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    scene.set_medium(1u, Medium{/*sigma_s=*/10.0f, /*sigma_a=*/0.0f});
+    PointLight light{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, /*medium_id=*/1u};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{0u};
+    tracer.trace(10000, /*max_depth=*/4, rng);
+
+    REQUIRE(!tracer.beams().empty());
+    REQUIRE(tracer.vol_points().size() == tracer.beams().size());
+}
+
+TEST_CASE("PhotonTracer: vol_points position matches beam end", "[photon_tracer][vol_points]") {
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    scene.set_medium(1u, Medium{/*sigma_s=*/10.0f, /*sigma_a=*/0.0f});
+    PointLight light{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, /*medium_id=*/1u};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{1u};
+    tracer.trace(5000, /*max_depth=*/4, rng);
+
+    REQUIRE(tracer.vol_points().size() == tracer.beams().size());
+    for (size_t i = 0; i < tracer.beams().size(); ++i) {
+        const auto& b = tracer.beams()[i];
+        const auto& v = tracer.vol_points()[i];
+        REQUIRE(v.position.x == Catch::Approx(b.end.x).epsilon(1e-5f));
+        REQUIRE(v.position.y == Catch::Approx(b.end.y).epsilon(1e-5f));
+        REQUIRE(v.position.z == Catch::Approx(b.end.z).epsilon(1e-5f));
+        REQUIRE(v.medium_id    == b.medium_id);
+        REQUIRE(v.bounce_depth == b.bounce_depth);
+        REQUIRE(v.power.x == Catch::Approx(b.power.x).epsilon(1e-5f));
+        REQUIRE(v.power.y == Catch::Approx(b.power.y).epsilon(1e-5f));
+        REQUIRE(v.power.z == Catch::Approx(b.power.z).epsilon(1e-5f));
+    }
+}
+
+TEST_CASE("PhotonTracer: vol_points incoming_dir is unit-length", "[photon_tracer][vol_points]") {
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    scene.set_medium(1u, Medium{/*sigma_s=*/10.0f, /*sigma_a=*/0.0f});
+    PointLight light{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, /*medium_id=*/1u};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{2u};
+    tracer.trace(5000, /*max_depth=*/4, rng);
+
+    for (const auto& v : tracer.vol_points()) {
+        const float len = std::sqrt(v.incoming_dir.x*v.incoming_dir.x +
+                                    v.incoming_dir.y*v.incoming_dir.y +
+                                    v.incoming_dir.z*v.incoming_dir.z);
+        REQUIRE(len == Catch::Approx(1.0f).epsilon(1e-4f));
+    }
+}
+
+TEST_CASE("PhotonTracer: vacuum scene has no vol_points", "[photon_tracer][vol_points]") {
+    RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
+                   std::vector<uint32_t>(12u, 0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    PointLight light{{0.0f, 0.0f, 0.0f}};
+    PhotonTracer tracer{scene, bvh, light};
+    Rng rng{3u};
+    tracer.trace(10000, /*max_depth=*/4, rng);
+
+    REQUIRE(tracer.vol_points().empty());
+    REQUIRE(tracer.beams().empty());
+}
+
 TEST_CASE("PhotonTracer: beam power equals incident weight at scatter point",
           "[photon_tracer][power][medium]") {
     // Very dense medium (sigma_s=1000) forces an immediate scatter; beam.power = init_weight.

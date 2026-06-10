@@ -8,6 +8,8 @@ add_executable(SplatTests
     point_light_test.cpp
     env_light_test.cpp
     photon_tracer_test.cpp
+    photon_map_test.cpp
+    photon_mapper_test.cpp
     path_tracer_test.cpp
     scene_test.cpp
     bsdf_test.cpp
@@ -21,6 +23,7 @@ add_executable(SplatTests
     ${CMAKE_SOURCE_DIR}/src/point_light.cpp
     ${CMAKE_SOURCE_DIR}/src/env_light.cpp
     ${CMAKE_SOURCE_DIR}/src/photon_tracer.cpp
+    ${CMAKE_SOURCE_DIR}/src/photon_mapper.cpp
     ${CMAKE_SOURCE_DIR}/src/path_tracer.cpp
     ${CMAKE_SOURCE_DIR}/src/scene.cpp
     ${CMAKE_SOURCE_DIR}/src/bsdf.cpp

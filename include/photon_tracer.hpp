@@ -32,18 +32,21 @@ public:
     void trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
                uint32_t norm_count = 0);
 
-    const std::vector<PhotonPoint>& points() const { return points_; }
-    const std::vector<PhotonBeam>&  beams()  const { return beams_;  }
+    const std::vector<PhotonPoint>&   points()     const { return points_;     }
+    const std::vector<PhotonBeam>&    beams()      const { return beams_;      }
+    const std::vector<VolumePhoton>&  vol_points() const { return vol_points_; }
 
     void release_cpu_memory() {
         std::vector<PhotonPoint>().swap(points_);
         std::vector<PhotonBeam>().swap(beams_);
+        std::vector<VolumePhoton>().swap(vol_points_);
     }
 
 private:
-    const Scene&             scene_;
-    const tinybvh::BVH&      bvh_;
-    std::vector<Light>       lights_;
-    std::vector<PhotonPoint> points_;
-    std::vector<PhotonBeam>  beams_;
+    const Scene&              scene_;
+    const tinybvh::BVH&       bvh_;
+    std::vector<Light>        lights_;
+    std::vector<PhotonPoint>  points_;
+    std::vector<PhotonBeam>   beams_;
+    std::vector<VolumePhoton> vol_points_;
 };
