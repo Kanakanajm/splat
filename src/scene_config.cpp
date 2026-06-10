@@ -111,14 +111,28 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
     if (doc.contains("light"))
         parse_point_light(doc["light"], "light");
 
-    if (doc.contains("lights"))
-        for (size_t i = 0; i < doc["lights"].size(); ++i)
-            parse_point_light(doc["lights"][i], "lights[" + std::to_string(i) + "]");
+    if (doc.contains("lights")) {
+        for (size_t i = 0; i < doc["lights"].size(); ++i) {
+            const auto& l = doc["lights"][i];
+            const std::string ctx  = "lights[" + std::to_string(i) + "]";
+            const std::string kind = l.contains("kind") ? l["kind"].get<std::string>() : "point";
+            if (kind == "point")
+                parse_point_light(l, ctx);
+            else if (kind == "area") {
+                AreaLightCfg al;
+                al.instance = l.at("instance").get<std::string>();
+                if (l.contains("emission")) al.emission = parse_vec3(l["emission"]);
+                cfg.area_lights_.push_back(std::move(al));
+            } else
+                throw std::runtime_error("SceneConfig: " + ctx + ": unknown light kind '" + kind + "'");
+        }
+    }
 
     if (doc.contains("env_light")) {
         EnvLightCfg ec;
         const auto& el = doc["env_light"];
-        if (el.contains("color")) ec.color = parse_vec3(el["color"]);
+        if (el.contains("color"))      ec.color = parse_vec3(el["color"]);
+        else if (el.contains("power")) ec.color = parse_vec3(el["power"]);
         cfg.env_light_ = ec;
     }
 
@@ -171,6 +185,43 @@ std::vector<Light> SceneConfig::apply(Scene& scene) const {
     for (const auto& pl : point_lights_) {
         const uint32_t light_mid = resolve_medium(pl.medium);
         lights.push_back(PointLight{pl.pos, pl.power, light_mid});
+    }
+
+    for (const auto& al_cfg : area_lights_) {
+        const auto id_opt = model.find_instance(al_cfg.instance);
+        if (!id_opt)
+            throw std::runtime_error("SceneConfig: area light instance '" + al_cfg.instance + "' not found in model");
+        const uint32_t iid = *id_opt;
+
+        AreaLight al;
+        al.emission   = al_cfg.emission;
+        al.total_area = 0.0f;
+        bool normal_set = false;
+
+        const auto& tris_buf = model.triangles();
+        for (uint32_t p = 0; p < model.triangle_count(); ++p) {
+            if (model.instance_id(p) != iid) continue;
+            AreaLight::Tri t;
+            t.v0 = {tris_buf[p*3+0].x, tris_buf[p*3+0].y, tris_buf[p*3+0].z};
+            t.v1 = {tris_buf[p*3+1].x, tris_buf[p*3+1].y, tris_buf[p*3+1].z};
+            t.v2 = {tris_buf[p*3+2].x, tris_buf[p*3+2].y, tris_buf[p*3+2].z};
+            const tinybvh::bvhvec3 e1{t.v1.x-t.v0.x, t.v1.y-t.v0.y, t.v1.z-t.v0.z};
+            const tinybvh::bvhvec3 e2{t.v2.x-t.v0.x, t.v2.y-t.v0.y, t.v2.z-t.v0.z};
+            const tinybvh::bvhvec3 cr = tinybvh::tinybvh_cross(e1, e2);
+            const float len = std::sqrt(cr.x*cr.x + cr.y*cr.y + cr.z*cr.z);
+            al.total_area += 0.5f * len;
+            if (!normal_set && len > 1e-8f) {
+                al.normal    = tinybvh::tinybvh_normalize(cr);
+                normal_set   = true;
+            }
+            al.tris.push_back(t);
+            al.prim_indices.push_back(p);
+        }
+
+        if (al.tris.empty())
+            throw std::runtime_error("SceneConfig: area light instance '" + al_cfg.instance + "' has no triangles");
+
+        lights.push_back(std::move(al));
     }
 
     if (env_light_) {

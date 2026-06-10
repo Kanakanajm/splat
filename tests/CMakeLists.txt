@@ -1,5 +1,6 @@
 add_executable(SplatTests
     smoke_test.cpp
+    capture_state_test.cpp
     ray_model_test.cpp
     bvh_intersect_test.cpp
     bvh_intersect_image_test.cpp
@@ -7,6 +8,7 @@ add_executable(SplatTests
     point_light_test.cpp
     env_light_test.cpp
     photon_tracer_test.cpp
+    path_tracer_test.cpp
     scene_test.cpp
     bsdf_test.cpp
     scene_config_test.cpp
@@ -19,6 +21,7 @@ add_executable(SplatTests
     ${CMAKE_SOURCE_DIR}/src/point_light.cpp
     ${CMAKE_SOURCE_DIR}/src/env_light.cpp
     ${CMAKE_SOURCE_DIR}/src/photon_tracer.cpp
+    ${CMAKE_SOURCE_DIR}/src/path_tracer.cpp
     ${CMAKE_SOURCE_DIR}/src/scene.cpp
     ${CMAKE_SOURCE_DIR}/src/bsdf.cpp
     ${CMAKE_SOURCE_DIR}/src/scene_config.cpp
@@ -38,5 +41,9 @@ target_compile_definitions(SplatTests PRIVATE
 )
 
 target_link_libraries(SplatTests PRIVATE Catch2::Catch2WithMain assimp::assimp)
+
+if(NOT MSVC)
+    target_compile_options(SplatTests PRIVATE -march=native)
+endif()
 
 catch_discover_tests(SplatTests)

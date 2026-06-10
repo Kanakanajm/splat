@@ -46,6 +46,11 @@ private:
         tinybvh::bvhvec3 power = {1.0f, 1.0f, 1.0f};
         std::string      medium;
     };
+    struct AreaLightCfg {
+        std::string      instance;
+        tinybvh::bvhvec3 emission = {1.0f, 1.0f, 1.0f};
+    };
     std::vector<PointLightCfg>    point_lights_;
     std::optional<EnvLightCfg>    env_light_;
+    std::vector<AreaLightCfg>     area_lights_;
 };
