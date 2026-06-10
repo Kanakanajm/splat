@@ -230,6 +230,12 @@ def export_mitsuba(obj_path, camera_json_path, output_dir, spp=256, max_depth=8)
     for light_def in ([scene['light']] if 'light' in scene else []) + scene.get('lights', []):
         _add_point_light(light_def)
 
+    if 'env_light' in scene:
+        el = scene['env_light']
+        radiance = el.get('color', el.get('power', [1.0, 1.0, 1.0]))
+        emitter = ET.SubElement(root, 'emitter', type='constant')
+        ET.SubElement(emitter, 'rgb', name='radiance', value=_rgb_str(radiance))
+
     # Named BSDFs (defined once, referenced by shapes)
     bsdfs = scene.get('bsdfs', {})
     for bsdf_name, bsdf_def in bsdfs.items():

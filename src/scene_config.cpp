@@ -118,7 +118,8 @@ SceneConfig SceneConfig::load(const std::string& model_path) {
     if (doc.contains("env_light")) {
         EnvLightCfg ec;
         const auto& el = doc["env_light"];
-        if (el.contains("color")) ec.color = parse_vec3(el["color"]);
+        if (el.contains("color"))      ec.color = parse_vec3(el["color"]);
+        else if (el.contains("power")) ec.color = parse_vec3(el["power"]);
         cfg.env_light_ = ec;
     }
 
