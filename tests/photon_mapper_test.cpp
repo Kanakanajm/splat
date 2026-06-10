@@ -5,6 +5,7 @@
 #include "medium.hpp"
 #include "photon_mapper.hpp"
 #include "point_light.hpp"
+#include "ray_camera.hpp"
 #include "ray_model.hpp"
 #include "scene.hpp"
 
@@ -82,6 +83,145 @@ TEST_CASE("PhotonMapper: no volume photons in vacuum scene",
                         /*r_surf=*/0.1f, /*r_vol=*/0.1f, /*max_cam_depth=*/4};
 
     REQUIRE(mapper.vol_photon_count() == 0u);
+}
+
+// ─── Surface gather (Phase 1: vacuum, diffuse) ────────────────────────────────
+
+// Note: PhotonTracer only stores photons at bounce_depth > 0 (indirect hits).
+// Tests use a closed box so photons always bounce and get stored on the walls.
+
+TEST_CASE("PhotonMapper: render returns non-zero pixels for indirect lit scene",
+          "[photon_mapper][gather][surface]") {
+    RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
+                   std::vector<uint32_t>(12u,0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    PointLight light{{0.f,0.f,0.f}};
+
+    // Camera inside the box, looking at the -z wall which has indirect photons.
+    PinholeCamera cam;
+    cam.eye    = {0.f, 0.f, 0.5f};
+    cam.target = {0.f, 0.f, -1.f};
+    cam.up     = {0.f, 1.f, 0.f};
+    cam.fov_y  = 0.8f;
+    cam.width  = 8;
+    cam.height = 8;
+
+    PhotonMapper mapper{scene, bvh, {Light{light}},
+                        /*n_photons=*/50000, /*r_surf=*/0.3f, /*r_vol=*/0.1f,
+                        /*max_cam_depth=*/4};
+
+    std::vector<float> out;
+    mapper.render(out, 8, 8, cam);
+
+    REQUIRE(out.size() == 8u * 8u * 3u);
+    int nonzero = 0;
+    for (float v : out) if (v > 0.f) ++nonzero;
+    REQUIRE(nonzero > 0);
+}
+
+TEST_CASE("PhotonMapper: render returns zero for non-diffuse (conductor) surface",
+          "[photon_mapper][gather][surface]") {
+    RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
+                   std::vector<uint32_t>(12u,0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    scene.set_instance_bsdf(0u, 1u);
+    scene.set_bsdf(1u, Bsdf{BsdfKind::Conductor, 1.0f});
+    PointLight light{{0.f,0.f,0.f}};
+
+    PinholeCamera cam;
+    cam.eye    = {0.f, 0.f, 0.5f};
+    cam.target = {0.f, 0.f, -1.f};
+    cam.up     = {0.f, 1.f, 0.f};
+    cam.fov_y  = 0.8f;
+    cam.width  = 4;
+    cam.height = 4;
+
+    PhotonMapper mapper{scene, bvh, {Light{light}},
+                        /*n_photons=*/5000, /*r_surf=*/0.2f, /*r_vol=*/0.1f,
+                        /*max_cam_depth=*/4};
+
+    std::vector<float> out;
+    mapper.render(out, 4, 4, cam);
+
+    for (float v : out) REQUIRE(v == 0.f);
+}
+
+// ─── Volume gather (Phase 2: medium only) ─────────────────────────────────────
+
+TEST_CASE("PhotonMapper: volume gather returns non-zero inside participating medium",
+          "[photon_mapper][gather][volume]") {
+    // Dense medium fills the box, walls are conductor so only volume contributes.
+    RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
+                   std::vector<uint32_t>(12u,0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};
+    scene.set_instance_bsdf(0u, 1u);
+    scene.set_bsdf(1u, Bsdf{BsdfKind::Conductor, 1.0f});  // walls opaque, non-diffuse
+    scene.set_medium(1u, Medium{/*sigma_s=*/5.f, /*sigma_a=*/0.f});
+    PointLight light{{0.f,0.f,0.f},{1.f,1.f,1.f},/*medium_id=*/1u};
+
+    PinholeCamera cam;
+    cam.eye    = {0.f, 0.f, 0.f};
+    cam.target = {0.f, 0.f, -1.f};
+    cam.up     = {0.f, 1.f, 0.f};
+    cam.fov_y  = 0.8f;
+    cam.width  = 4;
+    cam.height = 4;
+
+    PhotonMapper mapper{scene, bvh, {Light{light}},
+                        /*n_photons=*/50000, /*r_surf=*/0.1f, /*r_vol=*/0.3f,
+                        /*max_cam_depth=*/8};
+
+    std::vector<float> out;
+    mapper.render(out, 4, 4, cam, /*start_medium=*/1u);
+
+    int nonzero = 0;
+    for (float v : out) if (v > 0.f) ++nonzero;
+    REQUIRE(nonzero > 0);
+}
+
+// ─── Combined gather (Phase 3: diffuse + medium) ─────────────────────────────
+
+TEST_CASE("PhotonMapper: combined scene has volume + surface contribution",
+          "[photon_mapper][gather][combined]") {
+    // Diffuse walls + participating medium.
+    // Camera is inside the medium: some rays scatter in medium (volume),
+    // others reach the wall (surface).
+    RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
+                   std::vector<uint32_t>(12u,0u), 1u};
+    tinybvh::BVH bvh;
+    bvh.Build(model.triangles().data(), model.triangle_count());
+    Scene scene{model};  // default Diffuse walls
+    scene.set_medium(1u, Medium{/*sigma_s=*/2.f, /*sigma_a=*/0.f});
+    PointLight light{{0.f,0.f,0.f},{1.f,1.f,1.f},/*medium_id=*/1u};
+
+    PinholeCamera cam;
+    cam.eye    = {0.f, 0.f, 0.f};
+    cam.target = {0.f, 0.f, -1.f};
+    cam.up     = {0.f, 1.f, 0.f};
+    cam.fov_y  = 0.8f;
+    cam.width  = 4;
+    cam.height = 4;
+
+    // Enough photons for both trees to be populated.
+    PhotonMapper mapper{scene, bvh, {Light{light}},
+                        /*n_photons=*/50000, /*r_surf=*/0.3f, /*r_vol=*/0.3f,
+                        /*max_cam_depth=*/8};
+
+    REQUIRE(mapper.surf_photon_count() > 0u);
+    REQUIRE(mapper.vol_photon_count()  > 0u);
+
+    std::vector<float> out;
+    mapper.render(out, 4, 4, cam, /*start_medium=*/1u);
+
+    int nonzero = 0;
+    for (float v : out) if (v > 0.f) ++nonzero;
+    REQUIRE(nonzero > 0);
 }
 
 TEST_CASE("PhotonMapper: surface photon count scales with n_photons",
