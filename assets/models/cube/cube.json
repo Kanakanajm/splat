@@ -1,0 +1,12 @@
+{
+  "env_light": { "power": [1.0, 1.0, 1.0] },
+  "mediums": {
+  },
+  "bsdfs": {
+    "grey-diffuse": { "kind": "Diffuse", "color": [0.8, 0.8, 0.8] }
+
+  },
+  "instances": {
+    "cube": { "bsdf": "grey-diffuse" }
+  }
+}
