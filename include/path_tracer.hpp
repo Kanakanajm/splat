@@ -44,6 +44,14 @@ private:
     tinybvh::bvhvec3 nee_medium(const tinybvh::bvhvec3& p,
                                  uint32_t medium_id, Rng& rng) const;
 
+    // Transmittance along a shadow ray from origin in direction wi for
+    // max_dist world-units, starting in medium_id. Returns 0 if occluded by
+    // an opaque surface, otherwise the product exp(-sigma_t_i * d_i) over
+    // all media segments. Passes transparently through Dielectric/MediumShell
+    // boundaries, updating the medium id at each crossing.
+    float shadow_Tr(const tinybvh::bvhvec3& origin, const tinybvh::bvhvec3& wi,
+                    float max_dist, uint32_t medium_id) const;
+
     const Scene&        scene_;
     const tinybvh::BVH& bvh_;
     std::vector<Light>  lights_;

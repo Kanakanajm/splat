@@ -48,7 +48,7 @@ def split_obj_groups(obj_path):
                 norms.append(s)
             elif s[:3] in ('vt ', 'vt\t'):
                 texes.append(s)
-            elif s.startswith('g '):
+            elif s.startswith('g ') or s.startswith('o '):
                 current = {'name': s[2:].strip(), 'faces': []}
                 groups.append(current)
             elif s.startswith('f ') and current is not None:
@@ -143,8 +143,11 @@ def bsdf_to_xml_elem(bsdf_def, bsdf_id=None):
         elem.set('type', 'dielectric')
         ET.SubElement(elem, 'float', name='int_ior', value=str(ior))
 
+    elif kind == 'MediumShell':
+        elem.set('type', 'null')
+
     else:
-        # MediumShell or unknown → opaque white diffuse placeholder
+        # Unknown → opaque white diffuse placeholder
         elem.set('type', 'diffuse')
         ET.SubElement(elem, 'rgb', name='reflectance', value='0.8 0.8 0.8')
 
@@ -192,7 +195,7 @@ def export_mitsuba(obj_path, camera_json_path, output_dir, spp=256, max_depth=8)
     root = ET.Element('scene', version='3.0.0')
 
     # Integrator
-    integ = ET.SubElement(root, 'integrator', type='path')
+    integ = ET.SubElement(root, 'integrator', type='volpath')
     ET.SubElement(integ, 'integer', name='max_depth', value=str(max_depth))
 
     # Sensor
@@ -246,6 +249,17 @@ def export_mitsuba(obj_path, camera_json_path, output_dir, spp=256, max_depth=8)
         emitter = ET.SubElement(root, 'emitter', type='constant')
         ET.SubElement(emitter, 'rgb', name='radiance', value=_rgb_str(radiance))
 
+    # Homogeneous media (global definitions, referenced by shapes)
+    mediums_cfg = scene.get('mediums', {})
+    for med_name, med_def in mediums_cfg.items():
+        sigma_s = med_def['sigma_s']
+        sigma_a = med_def['sigma_a']
+        sigma_t = sigma_s + sigma_a
+        albedo  = sigma_s / sigma_t if sigma_t > 0.0 else 0.0
+        med_el  = ET.SubElement(root, 'medium', type='homogeneous', id=med_name)
+        ET.SubElement(med_el, 'rgb', name='sigma_t', value=f'{sigma_t} {sigma_t} {sigma_t}')
+        ET.SubElement(med_el, 'rgb', name='albedo',  value=f'{albedo} {albedo} {albedo}')
+
     # Named BSDFs (defined once, referenced by shapes)
     bsdfs = scene.get('bsdfs', {})
     for bsdf_name, bsdf_def in bsdfs.items():
@@ -268,6 +282,14 @@ def export_mitsuba(obj_path, camera_json_path, output_dir, spp=256, max_depth=8)
             al = area_lights_by_instance[grp_name]
             em = ET.SubElement(shape, 'emitter', type='area')
             ET.SubElement(em, 'rgb', name='radiance', value=_rgb_str(al['emission']))
+
+        inst_cfg = instances.get(grp_name, {})
+        med_in  = inst_cfg.get('medium_in',  '')
+        med_out = inst_cfg.get('medium_out', '')
+        if med_in  and med_in  != 'vacuum':
+            ET.SubElement(shape, 'ref', name='interior', id=med_in)
+        if med_out and med_out != 'vacuum':
+            ET.SubElement(shape, 'ref', name='exterior', id=med_out)
 
     _indent(root)
     out_path = output_dir / 'scene_mitsuba.xml'

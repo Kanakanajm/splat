@@ -51,13 +51,55 @@ PathTracer::PathTracer(const Scene& scene, const tinybvh::BVH& bvh,
     }
 }
 
+float PathTracer::shadow_Tr(const tinybvh::bvhvec3& origin,
+                             const tinybvh::bvhvec3& wi,
+                             float max_dist,
+                             uint32_t medium_id) const {
+    float Tr = 1.0f;
+    tinybvh::bvhvec3 pos = origin;
+    float remaining = max_dist;
+
+    for (int i = 0; i < 32; ++i) {
+        tinybvh::Ray ray{pos, wi};
+        bvh_.Intersect(ray);
+        const float hit_t = ray.hit.t;
+
+        if (hit_t >= remaining - kEps) {
+            // Reached target: accumulate final medium segment
+            const float sigma_t = scene_.medium(medium_id).sigma_t();
+            if (sigma_t > 0.0f)
+                Tr *= std::exp(-sigma_t * remaining);
+            return Tr;
+        }
+
+        const BsdfKind kind = scene_.bsdf_at(ray.hit.prim).kind;
+        if (kind != BsdfKind::Dielectric && kind != BsdfKind::MediumShell)
+            return 0.0f;  // opaque blocker
+
+        // Transparent boundary: accumulate segment Tr and cross
+        const float sigma_t = scene_.medium(medium_id).sigma_t();
+        if (sigma_t > 0.0f)
+            Tr *= std::exp(-sigma_t * hit_t);
+
+        const uint32_t in_id  = scene_.medium_in_at(ray.hit.prim);
+        const uint32_t out_id = scene_.medium_out_at(ray.hit.prim);
+        medium_id = (medium_id == in_id) ? out_id : in_id;
+
+        pos.x += (hit_t + kEps) * wi.x;
+        pos.y += (hit_t + kEps) * wi.y;
+        pos.z += (hit_t + kEps) * wi.z;
+        remaining -= hit_t + kEps;
+        if (remaining <= 0.0f) return Tr;
+    }
+    return Tr;  // safety: more than 32 boundaries
+}
+
 tinybvh::bvhvec3 PathTracer::nee_surface(const tinybvh::bvhvec3& p,
                                           const tinybvh::bvhvec3& n,
                                           const Bsdf& bsdf,
                                           uint32_t medium_id,
                                           Rng& rng) const {
     tinybvh::bvhvec3 result{0.0f, 0.0f, 0.0f};
-    const float sigma_t = scene_.medium(medium_id).sigma_t();
     const tinybvh::bvhvec3 offset{p.x + kEps*n.x, p.y + kEps*n.y, p.z + kEps*n.z};
 
     for (const auto& light : lights_) {
@@ -72,11 +114,9 @@ tinybvh::bvhvec3 PathTracer::nee_surface(const tinybvh::bvhvec3& p,
             const float cos_theta = wi.x*n.x + wi.y*n.y + wi.z*n.z;
             if (cos_theta <= 0.0f) continue;
 
-            tinybvh::Ray shadow{offset, wi};
-            bvh_.Intersect(shadow);
-            if (shadow.hit.t < dist - kEps) continue;
+            const float Tr = shadow_Tr(offset, wi, dist, medium_id);
+            if (Tr == 0.0f) continue;
 
-            const float Tr = sigma_t > 0.0f ? std::exp(-sigma_t * dist) : 1.0f;
             const float fac = Tr * kInvPi * kInv4Pi * cos_theta / (dist * dist);
             result.x += fac * bsdf.color.x * pl->power.x;
             result.y += fac * bsdf.color.y * pl->power.y;
@@ -87,13 +127,12 @@ tinybvh::bvhvec3 PathTracer::nee_surface(const tinybvh::bvhvec3& p,
             // NEE and BSDF continuation share the same cosine-weighted distribution,
             // so powerHeuristic(p_light, p_bsdf) = 0.5.
             const tinybvh::bvhvec3 wi = sample_cosine_hemisphere(rng, n);
-            tinybvh::Ray shadow{offset, wi};
-            bvh_.Intersect(shadow);
-            if (shadow.hit.t < BVH_FAR) continue;
+            const float Tr = shadow_Tr(offset, wi, BVH_FAR, medium_id);
+            if (Tr == 0.0f) continue;
 
-            result.x += 0.5f * el->color.x * bsdf.color.x;
-            result.y += 0.5f * el->color.y * bsdf.color.y;
-            result.z += 0.5f * el->color.z * bsdf.color.z;
+            result.x += 0.5f * Tr * el->color.x * bsdf.color.x;
+            result.y += 0.5f * Tr * el->color.y * bsdf.color.y;
+            result.z += 0.5f * Tr * el->color.z * bsdf.color.z;
 
         } else if (const auto* al = std::get_if<AreaLight>(&light)) {
             const tinybvh::bvhvec3 q   = al->sample_point(rng);
@@ -111,11 +150,10 @@ tinybvh::bvhvec3 PathTracer::nee_surface(const tinybvh::bvhvec3& p,
             // exactly t = dist_shadow, preventing false self-occlusion.
             const tinybvh::bvhvec3 dir_s{q.x-offset.x, q.y-offset.y, q.z-offset.z};
             const float dist_shadow = vec_len(dir_s);
-            tinybvh::Ray shadow{offset, tinybvh::tinybvh_normalize(dir_s)};
-            bvh_.Intersect(shadow);
-            if (shadow.hit.t < dist_shadow - kEps) continue;
+            const float Tr = shadow_Tr(offset, tinybvh::tinybvh_normalize(dir_s),
+                                       dist_shadow, medium_id);
+            if (Tr == 0.0f) continue;
 
-            const float Tr      = sigma_t > 0.0f ? std::exp(-sigma_t * dist) : 1.0f;
             const float p_light = dist * dist / (al->total_area * cos_l);
             const float p_bsdf  = cos_i * kInvPi;
             const float w       = power_heuristic(p_light, p_bsdf);
@@ -132,7 +170,6 @@ tinybvh::bvhvec3 PathTracer::nee_medium(const tinybvh::bvhvec3& p,
                                          uint32_t medium_id,
                                          Rng& rng) const {
     tinybvh::bvhvec3 result{0.0f, 0.0f, 0.0f};
-    const float sigma_t = scene_.medium(medium_id).sigma_t();
 
     for (const auto& light : lights_) {
         if (const auto* pl = std::get_if<PointLight>(&light)) {
@@ -143,11 +180,9 @@ tinybvh::bvhvec3 PathTracer::nee_medium(const tinybvh::bvhvec3& p,
             if (dist < kEps) continue;
             const tinybvh::bvhvec3 wi = tinybvh::tinybvh_normalize(dir);
 
-            tinybvh::Ray shadow{p, wi};
-            bvh_.Intersect(shadow);
-            if (shadow.hit.t < dist - kEps) continue;
+            const float Tr = shadow_Tr(p, wi, dist, medium_id);
+            if (Tr == 0.0f) continue;
 
-            const float Tr  = sigma_t > 0.0f ? std::exp(-sigma_t * dist) : 1.0f;
             const float fac = Tr * kInv4Pi * kInv4Pi / (dist * dist);
             result.x += fac * pl->power.x;
             result.y += fac * pl->power.y;
@@ -157,13 +192,12 @@ tinybvh::bvhvec3 PathTracer::nee_medium(const tinybvh::bvhvec3& p,
             // Uniform sphere sample: phase/pdf = 1.  Same distribution as the
             // continued path, so powerHeuristic(p_light, p_bsdf) = 0.5.
             const tinybvh::bvhvec3 wi = sample_unit_sphere(rng);
-            tinybvh::Ray shadow{p, wi};
-            bvh_.Intersect(shadow);
-            if (shadow.hit.t < BVH_FAR) continue;
+            const float Tr = shadow_Tr(p, wi, BVH_FAR, medium_id);
+            if (Tr == 0.0f) continue;
 
-            result.x += 0.5f * el->color.x;
-            result.y += 0.5f * el->color.y;
-            result.z += 0.5f * el->color.z;
+            result.x += 0.5f * Tr * el->color.x;
+            result.y += 0.5f * Tr * el->color.y;
+            result.z += 0.5f * Tr * el->color.z;
 
         } else if (const auto* al = std::get_if<AreaLight>(&light)) {
             const tinybvh::bvhvec3 q   = al->sample_point(rng);
@@ -175,11 +209,9 @@ tinybvh::bvhvec3 PathTracer::nee_medium(const tinybvh::bvhvec3& p,
             const float cos_l = -(wi.x*al->normal.x + wi.y*al->normal.y + wi.z*al->normal.z);
             if (cos_l <= 0.0f) continue;
 
-            tinybvh::Ray shadow{p, wi};
-            bvh_.Intersect(shadow);
-            if (shadow.hit.t < dist - kEps) continue;  // shadow origin is p so dist is exact
+            const float Tr = shadow_Tr(p, wi, dist, medium_id);
+            if (Tr == 0.0f) continue;
 
-            const float Tr      = sigma_t > 0.0f ? std::exp(-sigma_t * dist) : 1.0f;
             const float p_light = dist * dist / (al->total_area * cos_l);
             const float p_bsdf  = kInv4Pi;
             const float w       = power_heuristic(p_light, p_bsdf);
