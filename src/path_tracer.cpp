@@ -31,6 +31,12 @@ float max_component(const tinybvh::bvhvec3& v) {
     return std::max({v.x, v.y, v.z});
 }
 
+// Power heuristic (β=2) for two sampling strategies.
+float power_heuristic(float pdf_a, float pdf_b) {
+    const float a2 = pdf_a * pdf_a, b2 = pdf_b * pdf_b;
+    return a2 / (a2 + b2);
+}
+
 }  // namespace
 
 PathTracer::PathTracer(const Scene& scene, const tinybvh::BVH& bvh,
@@ -70,15 +76,17 @@ tinybvh::bvhvec3 PathTracer::nee_surface(const tinybvh::bvhvec3& p,
             result.z += fac * bsdf.color.z * pl->power.z;
 
         } else if (const auto* el = std::get_if<EnvLight>(&light)) {
-            // Cosine-weighted hemisphere sample: f_r*cos/pdf = bsdf.color (Lambertian)
+            // Cosine-weighted hemisphere sample: f_r*cos/pdf = bsdf.color (Lambertian).
+            // NEE and BSDF continuation share the same cosine-weighted distribution,
+            // so powerHeuristic(p_light, p_bsdf) = 0.5.
             const tinybvh::bvhvec3 wi = sample_cosine_hemisphere(rng, n);
             tinybvh::Ray shadow{offset, wi};
             bvh_.Intersect(shadow);
             if (shadow.hit.t < BVH_FAR) continue;
 
-            result.x += el->color.x * bsdf.color.x;
-            result.y += el->color.y * bsdf.color.y;
-            result.z += el->color.z * bsdf.color.z;
+            result.x += 0.5f * el->color.x * bsdf.color.x;
+            result.y += 0.5f * el->color.y * bsdf.color.y;
+            result.z += 0.5f * el->color.z * bsdf.color.z;
         }
     }
     return result;
@@ -110,15 +118,16 @@ tinybvh::bvhvec3 PathTracer::nee_medium(const tinybvh::bvhvec3& p,
             result.z += fac * pl->power.z;
 
         } else if (const auto* el = std::get_if<EnvLight>(&light)) {
-            // Uniform sphere sample: phase/pdf = 1/(4pi) / (1/(4pi)) = 1
+            // Uniform sphere sample: phase/pdf = 1.  Same distribution as the
+            // continued path, so powerHeuristic(p_light, p_bsdf) = 0.5.
             const tinybvh::bvhvec3 wi = sample_unit_sphere(rng);
             tinybvh::Ray shadow{p, wi};
             bvh_.Intersect(shadow);
             if (shadow.hit.t < BVH_FAR) continue;
 
-            result.x += el->color.x;
-            result.y += el->color.y;
-            result.z += el->color.z;
+            result.x += 0.5f * el->color.x;
+            result.y += 0.5f * el->color.y;
+            result.z += 0.5f * el->color.z;
         }
     }
     return result;
@@ -127,6 +136,12 @@ tinybvh::bvhvec3 PathTracer::nee_medium(const tinybvh::bvhvec3& p,
 tinybvh::bvhvec3 PathTracer::Li(tinybvh::Ray ray, uint32_t medium_id, Rng& rng) const {
     tinybvh::bvhvec3 Lo{0.0f, 0.0f, 0.0f};
     tinybvh::bvhvec3 weight{1.0f, 1.0f, 1.0f};
+    // prev_specular: true when the previous vertex was specular or this is the
+    // camera ray.  Controls whether the BSDF-sampled ray may accumulate emitter Le.
+    // prev_bsdf_pdf: solid-angle PDF of the direction that produced the current ray;
+    // used in the power heuristic against the light-sampling PDF.
+    bool  prev_specular  = true;
+    float prev_bsdf_pdf  = 0.0f;
 
     for (int depth = 0; depth < max_depth_; ++depth) {
         ray.hit.t = BVH_FAR;
@@ -153,17 +168,25 @@ tinybvh::bvhvec3 PathTracer::Li(tinybvh::Ray ray, uint32_t medium_id, Rng& rng) 
             Lo.y += weight.y * ld.y;
             Lo.z += weight.z * ld.z;
 
-            // Isotropic phase: sample uniform direction
+            // Isotropic phase: sample uniform direction; PDF = 1/(4π)
             ray = tinybvh::Ray{scatter, sample_unit_sphere(rng)};
+            prev_bsdf_pdf = kInv4Pi;
+            prev_specular = false;
 
         } else {
             // --- Surface hit or miss ---
             if (!surface_hit) {
                 for (const auto& l : lights_)
                     if (const auto* el = std::get_if<EnvLight>(&l)) {
-                        Lo.x += weight.x * el->color.x;
-                        Lo.y += weight.y * el->color.y;
-                        Lo.z += weight.z * el->color.z;
+                        // MIS weight for BSDF-sampled env light:
+                        // p_light (cosine-weighted NEE) == prev_bsdf_pdf, so
+                        // powerHeuristic(prev_bsdf_pdf, prev_bsdf_pdf) = 0.5.
+                        // Specular/camera bounces skipped NEE → full weight (1.0).
+                        const float w = prev_specular ? 1.0f
+                                      : power_heuristic(prev_bsdf_pdf, prev_bsdf_pdf);
+                        Lo.x += w * weight.x * el->color.x;
+                        Lo.y += w * weight.y * el->color.y;
+                        Lo.z += w * weight.z * el->color.z;
                     }
                 break;
             }
@@ -188,6 +211,19 @@ tinybvh::bvhvec3 PathTracer::Li(tinybvh::Ray ray, uint32_t medium_id, Rng& rng) 
 
             const BsdfSample bs = bsdf.sample(rng, ray.D, normal);
             weight.x *= bs.weight.x; weight.y *= bs.weight.y; weight.z *= bs.weight.z;
+
+            if (bsdf.kind == BsdfKind::Diffuse) {
+                // Cosine-weighted hemisphere: PDF = cosθ / π
+                const float cos_out = std::max(0.0f,
+                    bs.dir.x * oriented_n.x +
+                    bs.dir.y * oriented_n.y +
+                    bs.dir.z * oriented_n.z);
+                prev_bsdf_pdf = cos_out * kInvPi;
+                prev_specular = false;
+            } else {
+                prev_bsdf_pdf = 0.0f;
+                prev_specular = true;
+            }
 
             if (bs.is_refract) {
                 const uint32_t in_id  = scene_.medium_in_at(prim);

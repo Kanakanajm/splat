@@ -53,7 +53,9 @@ TEST_CASE("PathTracer [P1]: NEE direct light matches analytic Lambertian formula
     // Camera at z=2, pixel (0,0) hits quad at (0,0,0), normal = +z, cos_theta = 1.
     // Analytic direct: (1/pi) * pi / 1^2 * cos(0) = 1.0
     // With NEE only (max_depth=1), result is deterministic for the direct term.
-    constexpr float kPi = 3.14159265358979f;
+    // Analytic: (ρ/π) * (Φ/4π) * cos(θ) / d² = (1/π) * (π/4π) * 1 / 1 = 1/(4π)
+    constexpr float kPi    = 3.14159265358979f;
+    constexpr float kInv4Pi = 1.0f / (4.0f * kPi);
 
     auto verts = make_zquad(0.0f);
     RayModel model{std::move(verts), std::vector<uint32_t>(2u, 0u), 1u};
@@ -78,9 +80,9 @@ TEST_CASE("PathTracer [P1]: NEE direct light matches analytic Lambertian formula
     std::vector<float> out;
     pt.render(out, 1, 1, cam);
 
-    REQUIRE(out[0] == Catch::Approx(1.0f).epsilon(0.01f));
-    REQUIRE(out[1] == Catch::Approx(1.0f).epsilon(0.01f));
-    REQUIRE(out[2] == Catch::Approx(1.0f).epsilon(0.01f));
+    REQUIRE(out[0] == Catch::Approx(kInv4Pi).epsilon(0.01f));
+    REQUIRE(out[1] == Catch::Approx(kInv4Pi).epsilon(0.01f));
+    REQUIRE(out[2] == Catch::Approx(kInv4Pi).epsilon(0.01f));
 }
 
 TEST_CASE("PathTracer [P1]: black surface returns zero radiance",
@@ -353,11 +355,12 @@ TEST_CASE("PathTracer: render_checkpointed calls callback at each checkpoint SPP
     CHECK(called_spps[3] == 64);
     CHECK(called_spps[4] == 256);
 
-    // 256-spp result should converge close to 1.0 (analytic Lambertian direct)
+    // 256-spp result should converge close to 1/(4π) (analytic: (ρ/π)*(Φ/4π)*cosθ/d²)
+    constexpr float kInv4Pi_cp = 1.0f / (4.0f * kPi);
     REQUIRE(last_buf.size() == 3u);
-    CHECK(last_buf[0] == Catch::Approx(1.0f).epsilon(0.05f));
-    CHECK(last_buf[1] == Catch::Approx(1.0f).epsilon(0.05f));
-    CHECK(last_buf[2] == Catch::Approx(1.0f).epsilon(0.05f));
+    CHECK(last_buf[0] == Catch::Approx(kInv4Pi_cp).epsilon(0.05f));
+    CHECK(last_buf[1] == Catch::Approx(kInv4Pi_cp).epsilon(0.05f));
+    CHECK(last_buf[2] == Catch::Approx(kInv4Pi_cp).epsilon(0.05f));
 }
 
 TEST_CASE("PathTracer: render_checkpointed with empty checkpoints does nothing",
