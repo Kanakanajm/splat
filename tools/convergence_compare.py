@@ -4,6 +4,7 @@ Compute per-checkpoint RMSE and save a log-log convergence plot.
 
 Auto-detects comparison mode from files present in output_dir:
 
+  ss_pass*.exr + pm_spp*.exr   → SS vs PM final  (each SS checkpoint vs last PM)
   pt_spp*.exr  + mit_spp*.exr  → PT vs Mitsuba   (paired by SPP)
   pm_spp*.exr  + mit_spp*.exr  → PM vs Mitsuba   (paired by SPP)
   pm_spp*.exr  + pt_spp*.exr   → PM vs PathTracer (paired by SPP)
@@ -40,6 +41,10 @@ def find_spp_files(output_dir: Path, prefix: str) -> dict[int, Path]:
             if (m := pat.fullmatch(p.name))}
 
 
+# Alias: pass-indexed files use the same filename pattern.
+find_pass_files = find_spp_files
+
+
 def find_pairs(a: dict, b: dict) -> list[tuple[int, Path, Path]]:
     common = sorted(set(a) & set(b))
     return [(spp, a[spp], b[spp]) for spp in common]
@@ -74,11 +79,18 @@ def main() -> None:
 
     out = Path(args.output_dir)
 
+    ss  = find_pass_files(out, "ss_pass")
     pt  = find_spp_files(out, "pt_spp")
     mit = find_spp_files(out, "mit_spp")
     pm  = find_spp_files(out, "pm_spp")
 
-    if pm and pt:
+    if ss and pm:
+        # Each SS checkpoint vs the final (highest-SPP) PM image as reference.
+        ref_path = pm[max(pm.keys())]
+        pairs = [(pass_n, path, ref_path) for pass_n, path in sorted(ss.items())]
+        plot_rmse(pairs, "SS pass", "SS vs PM (final)", out,
+                  "Surface Splat convergence vs PM reference")
+    elif pm and pt:
         pairs = find_pairs(pm, pt)
         if not pairs:
             print("No matching pm_spp / pt_spp pairs found.", file=sys.stderr)

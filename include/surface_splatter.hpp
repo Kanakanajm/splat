@@ -5,6 +5,7 @@
 #include "scene.hpp"
 #include "tiny_bvh.h"
 
+#include <functional>
 #include <vector>
 
 class Shader;
@@ -24,6 +25,17 @@ public:
                 Shader& geom_shader, Shader& splat_shader,
                 unsigned int fbo,
                 float h = 0.01f, float exposure = 1.0f);
+
+    // Like render(), but saves a snapshot at each pass index listed in `checkpoints`.
+    // `checkpoints` values are 1-based cumulative pass counts (use generate_checkpoints).
+    using CheckpointFn = std::function<void(int pass, const std::vector<float>&)>;
+    void render_checkpointed(int width, int height,
+                             const PinholeCamera& cam,
+                             Shader& geom_shader, Shader& splat_shader,
+                             unsigned int fbo,
+                             const std::vector<int>& checkpoints,
+                             const CheckpointFn& on_checkpoint,
+                             float h = 0.01f, float exposure = 1.0f);
 
 private:
     Scene&              scene_;

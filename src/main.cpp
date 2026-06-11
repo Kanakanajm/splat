@@ -542,15 +542,78 @@ int main(int argc, char **argv) {
                   << " per_pass=" << cs.photons_per_pass
                   << " h=" << cs.ss_h << "\n";
 
-        std::vector<float> ss_rgb;
-        ss.render(ss_rgb, W, H, ss_cam, geomShader, splatShader, accumFbo, cs.ss_h, cs.ss_exposure);
+        if (cs.ss_compare_pm) {
+          // --- Checkpointed SS + PM reference comparison ---
+          const std::string out_dir = make_output_dir(scenePath);
+          std::filesystem::create_directories(out_dir);
+          ss_cam.save_json(out_dir + "/camera.json");
+          std::cout << "Output dir: " << out_dir << "\n";
 
-        const char* exrErr = nullptr;
-        if (SaveEXR(ss_rgb.data(), W, H, 3, 0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
-          std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
-          FreeEXRErrorMessage(exrErr);
+          const std::string venv_py = (
+              std::filesystem::path(argv[0]).parent_path() / "../.venv/bin/python").string();
+          auto run = [](const std::string& cmd) {
+            std::cout << "$ " << cmd << "\n";
+            if (std::system(cmd.c_str()) != 0)
+              std::cerr << "[warning] command returned non-zero\n";
+          };
+          auto save_exr = [&](const std::vector<float>& buf, const char* path) {
+            const char* exrErr = nullptr;
+            if (SaveEXR(buf.data(), W, H, 3, 0, path, &exrErr) != TINYEXR_SUCCESS) {
+              std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+              FreeEXRErrorMessage(exrErr);
+            } else {
+              std::cout << "Saved: " << path << "\n";
+            }
+          };
+
+          // SS checkpoints: evenly spaced pass indices up to K.
+          const int K = (cs.total_photons + cs.photons_per_pass - 1) / cs.photons_per_pass;
+          const int n_ss_cp = std::max(1, std::min(cs.ss_num_checkpoints, K));
+          const auto ss_checkpoints = generate_checkpoints(K, n_ss_cp);
+
+          ss.render_checkpointed(W, H, ss_cam, geomShader, splatShader, accumFbo,
+            ss_checkpoints,
+            [&](int pass, const std::vector<float>& buf) {
+              char fname[512];
+              std::snprintf(fname, sizeof(fname), "%s/ss_pass%04d.exr", out_dir.c_str(), pass);
+              save_exr(buf, fname);
+            }, cs.ss_h, cs.ss_exposure);
+
+          // PM reference: same camera, r_surf = ss_h, spp = ss_pm_spp.
+          const auto pm_checkpoints = cs.ss_pm_save_checkpoints
+              ? generate_checkpoints(cs.ss_pm_spp,
+                                     std::max(1, std::min(cs.ss_num_checkpoints, cs.ss_pm_spp)))
+              : std::vector<int>{cs.ss_pm_spp};
+
+          PhotonMapper pm_ref{scene, bvh, lights,
+                              cs.pm_n_photons, cs.ss_h, cs.pm_r_vol,
+                              /*max_cam_depth=*/1, cs.ss_max_emit_depth};
+          std::cout << "[PM ref] spp=" << cs.ss_pm_spp
+                    << " n_photons=" << cs.pm_n_photons
+                    << " r_surf=" << cs.ss_h
+                    << " max_cam=1 max_emit=" << cs.ss_max_emit_depth << "\n";
+
+          pm_ref.render_checkpointed(W, H, ss_cam, pm_checkpoints,
+            [&](int spp, const std::vector<float>& buf) {
+              char fname[512];
+              std::snprintf(fname, sizeof(fname), "%s/pm_spp%04d.exr", out_dir.c_str(), spp);
+              save_exr(buf, fname);
+            });
+
+          run(venv_py + " tools/convergence_compare.py " + out_dir);
+
         } else {
-          std::cout << "Saved: " << cs.output_path << "\n";
+          // --- Single SS render ---
+          std::vector<float> ss_rgb;
+          ss.render(ss_rgb, W, H, ss_cam, geomShader, splatShader, accumFbo, cs.ss_h, cs.ss_exposure);
+
+          const char* exrErr = nullptr;
+          if (SaveEXR(ss_rgb.data(), W, H, 3, 0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
+            std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+            FreeEXRErrorMessage(exrErr);
+          } else {
+            std::cout << "Saved: " << cs.output_path << "\n";
+          }
         }
 
         // Restore interactive beams.
