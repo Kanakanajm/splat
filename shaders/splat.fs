@@ -31,7 +31,7 @@ void main() {
     // Irradiance estimate: Σ Φ_k · K(r/h) / h².  Outgoing radiance = f_r · E.
     // vPower is actual photon flux (W), so the incoming cosine is already baked
     // into the photon density — do NOT multiply by cosTheta here.
-    
-    vec3 radiance = (1 / (h * h * PI)) * vPower * (vBsdfColor / PI);
+    // k zeros out fragments outside the disk (triangle corners), ensuring ∫K dA = 1.
+    vec3 radiance = (k / (h * h * PI)) * vPower * (vBsdfColor / PI);
     FragColor     = vec4(radiance * exposure, 1.0);
 }
