@@ -29,6 +29,7 @@ add_executable(SplatApp
     src/photon_tracer.cpp
     src/photon_mapper.cpp
     src/path_tracer.cpp
+    src/surface_splatter.cpp
     src/scene.cpp
     src/scene_gl.cpp
     src/scene_config.cpp

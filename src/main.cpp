@@ -19,6 +19,7 @@
 #include "photon_tracer.hpp"
 #include "photon_mapper.hpp"
 #include "path_tracer.hpp"
+#include "surface_splatter.hpp"
 #include "ray_camera.hpp"
 #include "random.hpp"
 #include "tiny_bvh.h"
@@ -197,6 +198,7 @@ int main(int argc, char **argv) {
   }
 
   Shader pointShader        ("shaders/point.vs",          "shaders/point.fs");
+  Shader splatShader        ("shaders/splat.vs", "shaders/splat.gs", "shaders/splat.fs");
   Shader beamShader         ("shaders/beam.vs", "shaders/beam.gs", "shaders/beam.fs");
   Shader geomShader         ("shaders/geom.vs",           "shaders/geom.fs");
   Shader depthPeelInitShader("shaders/geom.vs", "shaders/depth_peel_init.fs");
@@ -517,6 +519,44 @@ int main(int argc, char **argv) {
           pm.render(pm_rgb, W, H, pm_cam, 0u, cs.pm_spp);
           save_exr(pm_rgb, cs.output_path);
         }
+
+        cs.is_running = false;
+      } else if (cs.use_surface_splatter) {
+        // --- Surface Splat capture ---
+        const int W = framebufferWidth, H = framebufferHeight;
+        PinholeCamera ss_cam{
+            .eye    = {camera.Position.x, camera.Position.y, camera.Position.z},
+            .target = {camera.Position.x + camera.Front.x,
+                       camera.Position.y + camera.Front.y,
+                       camera.Position.z + camera.Front.z},
+            .up     = {camera.Up.x, camera.Up.y, camera.Up.z},
+            .fov_y  = glm::radians(camera.Zoom),
+            .width  = static_cast<uint32_t>(W),
+            .height = static_cast<uint32_t>(H),
+        };
+
+        SurfaceSplatter ss{scene, bvh, lights,
+                           cs.total_photons, cs.photons_per_pass,
+                           cs.ss_max_emit_depth};
+        std::cout << "[SS] n_photons=" << cs.total_photons
+                  << " per_pass=" << cs.photons_per_pass
+                  << " h=" << cs.ss_h << "\n";
+
+        std::vector<float> ss_rgb;
+        ss.render(ss_rgb, W, H, ss_cam, geomShader, splatShader, accumFbo, cs.ss_h, cs.ss_exposure);
+
+        const char* exrErr = nullptr;
+        if (SaveEXR(ss_rgb.data(), W, H, 3, 0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
+          std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+          FreeEXRErrorMessage(exrErr);
+        } else {
+          std::cout << "Saved: " << cs.output_path << "\n";
+        }
+
+        // Restore interactive beams.
+        Rng restore_rng(0xDECAFu);
+        tracer.trace(photonCount, /*max_depth=*/20u, restore_rng);
+        scene.upload_beams(tracer.beams());
 
         cs.is_running = false;
       } else {

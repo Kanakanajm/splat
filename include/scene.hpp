@@ -58,6 +58,11 @@ public:
     void draw_beams(Shader& shader, int aov_mode, const std::vector<bool>& medium_visible,
                     int bounce_filter = -1);
 
+    // --- Surface photon splats (kernel-density estimate on surfaces).
+    void upload_splats(const std::vector<PhotonPoint>& points);
+    // aov_mode: 0=Radiance (additive), 1=Wireframe, 2=Normal.
+    void draw_splats(Shader& splat_shader, float h, float exposure, int aov_mode = 0);
+
     // --- Depth peel (camera-side transmittance maps).
     // Allocates GL_TEXTURE_2D_ARRAY depth and medium arrays + FBO.
     void         init_depth_peel(int width, int height, int max_layers = 8);
@@ -101,6 +106,14 @@ private:
     int                     beams_bounce_filter_cache_ = -2;  // -2 = uninitialized
     float                   beam_max_bounce_ = 1.0f;
     float                   beam_max_length_ = 1.0f;
+
+    // GL handles for surface splats (0 until first upload).
+    unsigned int splats_vao_         = 0;
+    unsigned int splats_vbo_         = 0;
+    uint32_t     splat_vertex_count_ = 0;
+    unsigned int splat_kernel_tex_   = 0;
+    struct SplatRange { uint32_t start; uint32_t count; };
+    std::vector<SplatRange> splat_ranges_;
 
     // GL handles for depth peel (0 until init_depth_peel).
     unsigned int peel_fbo_          = 0;
