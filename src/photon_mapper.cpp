@@ -45,6 +45,7 @@ tinybvh::bvhvec3 PhotonMapper::gather(tinybvh::Ray ray, uint32_t medium_id,
                                        int depth, Rng& rng) const {
     tinybvh::bvhvec3 L{};
     tinybvh::bvhvec3 weight{1.f, 1.f, 1.f};
+    constexpr float  kEps = 1e-4f;
 
     for (int d = depth; d < max_cam_depth_; ++d) {
         bvh_.Intersect(ray);
@@ -54,32 +55,29 @@ tinybvh::bvhvec3 PhotonMapper::gather(tinybvh::Ray ray, uint32_t medium_id,
         const auto&  med   = scene_.medium(medium_id);
         const float  sig_t = med.sigma_t();
 
-        // Free-flight sampling: vacuum never scatters.
         const float t_med = sig_t > 0.f
                              ? sample_free_flight(sig_t, rng.uniform())
                              : BVH_FAR;
 
         if (t_med < t_hit) {
             // ── Volume scatter ──────────────────────────────────────────────
-            const float Tr = std::exp(-sig_t * t_med);
-            weight.x *= Tr; weight.y *= Tr; weight.z *= Tr;
-
             const tinybvh::bvhvec3 x{
                 ray.O.x + t_med * ray.D.x,
                 ray.O.y + t_med * ray.D.y,
                 ray.O.z + t_med * ray.D.z,
             };
 
-            // Direct volume lighting at first scatter via NEE.
-            if (d == 0) {
-                const auto ld = dl::nee_medium(scene_, bvh_, lights_, x, medium_id, rng);
-                L.x += weight.x * ld.x;
-                L.y += weight.y * ld.y;
-                L.z += weight.z * ld.z;
-            }
+            // IS weight: σ_s/σ_t (transmittance cancels against free-flight PDF).
+            const float alb = med.sigma_s / sig_t;
+            weight.x *= alb; weight.y *= alb; weight.z *= alb;
 
-            // L_vol = σ_s · k_vol · p_isotropic · Σ φ_j
-            // k_vol = 3/(4π r³),  p_isotropic = 1/(4π)
+            // // Direct via NEE.
+            // const auto ld = dl::nee_medium(scene_, bvh_, lights_, x, medium_id, rng);
+            // L.x += weight.x * ld.x;
+            // L.y += weight.y * ld.y;
+            // L.z += weight.z * ld.z;
+
+            // Indirect via photon map: σ_s · k_vol · (1/4π) · Σ φ_j
             const auto nearby = vol_tree_.radius_search(x, r_vol_);
             if (!nearby.empty()) {
                 tinybvh::bvhvec3 sum{};
@@ -95,62 +93,80 @@ tinybvh::bvhvec3 PhotonMapper::gather(tinybvh::Ray ray, uint32_t medium_id,
                 L.z += weight.z * coeff * sum.z;
             }
 
-            // Attenuate by single-scatter albedo for continuation.
-            const float alb = med.sigma_s / sig_t;
-            weight.x *= alb; weight.y *= alb; weight.z *= alb;
-
-            // Continue with a new isotropic direction.
-            const tinybvh::bvhvec3 nd = sample_unit_sphere(rng);
-            ray = tinybvh::Ray{x, nd};
+            ray = tinybvh::Ray{x, sample_unit_sphere(rng)};
             continue;
         }
 
         // ── Surface or miss ─────────────────────────────────────────────────
         if (!hit) break;
 
-        // Apply transmittance from last origin to surface.
-        if (sig_t > 0.f) {
-            const float Tr = std::exp(-sig_t * t_hit);
-            weight.x *= Tr; weight.y *= Tr; weight.z *= Tr;
-        }
-
-        const uint32_t prim   = ray.hit.prim;
-        const tinybvh::bvhvec3 normal = face_normal(scene_.model(), prim);
-        // Skip back faces — ray hits the wrong side of the surface.
-        if ((ray.D.x*normal.x + ray.D.y*normal.y + ray.D.z*normal.z) >= 0.f) break;
-
-        const Bsdf& bsdf = scene_.bsdf(scene_.bsdf_id_at(prim));
-        if (bsdf.kind != BsdfKind::Diffuse) break;
-
+        const uint32_t         prim   = ray.hit.prim;
         const tinybvh::bvhvec3 p{
             ray.O.x + t_hit * ray.D.x,
             ray.O.y + t_hit * ray.D.y,
             ray.O.z + t_hit * ray.D.z,
         };
+        const tinybvh::bvhvec3 normal = face_normal(scene_.model(), prim);
+        const Bsdf&             bsdf   = scene_.bsdf(scene_.bsdf_id_at(prim));
 
-        // Direct surface lighting at first camera bounce via NEE.
-        if (d == 0) {
-            const auto ld = dl::nee_surface(scene_, bvh_, lights_, p, normal, bsdf, medium_id, rng);
-            L.x += weight.x * ld.x;
-            L.y += weight.y * ld.y;
-            L.z += weight.z * ld.z;
+        // MediumShell: straight pass-through, switch medium.
+        if (bsdf.kind == BsdfKind::MediumShell) {
+            const uint32_t in_id  = scene_.medium_in_at(prim);
+            const uint32_t out_id = scene_.medium_out_at(prim);
+            medium_id = (medium_id == in_id) ? out_id : in_id;
+            const float ns = (normal.x*ray.D.x + normal.y*ray.D.y + normal.z*ray.D.z) >= 0.f
+                                 ? 1.f : -1.f;
+            ray = tinybvh::Ray{
+                {p.x + kEps*normal.x*ns, p.y + kEps*normal.y*ns, p.z + kEps*normal.z*ns},
+                ray.D};
+            continue;
         }
 
-        // L_surf = f_r · k_surf · Σ φ_j   where f_r = albedo/π, k_surf = 1/(π r²)
-        const auto nearby = surf_tree_.radius_search(p, r_surf_);
-        if (!nearby.empty()) {
-            tinybvh::bvhvec3 sum{};
-            for (const auto* ph : nearby) {
-                sum.x += ph->power.x;
-                sum.y += ph->power.y;
-                sum.z += ph->power.z;
+        // Back-face: terminate path.
+        if ((ray.D.x*normal.x + ray.D.y*normal.y + ray.D.z*normal.z) >= 0.f) break;
+
+        if (bsdf.kind == BsdfKind::Diffuse) {
+            // // Direct via NEE.
+            // const auto ld = dl::nee_surface(scene_, bvh_, lights_, p, normal, bsdf, medium_id, rng);
+            // L.x += weight.x * ld.x;
+            // L.y += weight.y * ld.y;
+            // L.z += weight.z * ld.z;
+
+            // Indirect via photon map: (albedo/π) · k_surf · Σ φ_j
+            const auto nearby = surf_tree_.radius_search(p, r_surf_);
+            if (!nearby.empty()) {
+                tinybvh::bvhvec3 sum{};
+                for (const auto* ph : nearby) {
+                    sum.x += ph->power.x;
+                    sum.y += ph->power.y;
+                    sum.z += ph->power.z;
+                }
+                const float k_surf = 1.f / (kPi * r_surf_ * r_surf_);
+                L.x += weight.x * (bsdf.color.x / kPi) * k_surf * sum.x;
+                L.y += weight.y * (bsdf.color.y / kPi) * k_surf * sum.y;
+                L.z += weight.z * (bsdf.color.z / kPi) * k_surf * sum.z;
             }
-            const float k_surf = 1.f / (kPi * r_surf_ * r_surf_);
-            L.x += weight.x * (bsdf.color.x / kPi) * k_surf * sum.x;
-            L.y += weight.y * (bsdf.color.y / kPi) * k_surf * sum.y;
-            L.z += weight.z * (bsdf.color.z / kPi) * k_surf * sum.z;
+            // Photon map owns all indirect at this vertex; continuing would double-count
+            // surface photons against subsequent NEE at volume scatter events.
+            break;
         }
-        break;  // stop at first diffuse surface
+
+        // Non-diffuse opaque surface (e.g. Conductor): sample BSDF and continue.
+        // No Le added if the ray hits a light — photon map + NEE own all contributions.
+        const BsdfSample bs = bsdf.sample(rng, ray.D, normal);
+        weight.x *= bs.weight.x; weight.y *= bs.weight.y; weight.z *= bs.weight.z;
+
+        if (bs.is_refract) {
+            const uint32_t in_id  = scene_.medium_in_at(prim);
+            const uint32_t out_id = scene_.medium_out_at(prim);
+            medium_id = (medium_id == in_id) ? out_id : in_id;
+        }
+
+        const float ns = (normal.x*bs.dir.x + normal.y*bs.dir.y + normal.z*bs.dir.z) >= 0.f
+                             ? 1.f : -1.f;
+        ray = tinybvh::Ray{
+            {p.x + kEps*normal.x*ns, p.y + kEps*normal.y*ns, p.z + kEps*normal.z*ns},
+            bs.dir};
     }
     return L;
 }

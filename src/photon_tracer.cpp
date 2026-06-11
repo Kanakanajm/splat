@@ -81,7 +81,8 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
                                                ray.O.z + t_media * ray.D.z};
 
                 beams_.push_back({ray.O, scatter, m, depth, weight / n});
-                vol_points_.push_back({scatter, ray.D, m, depth, weight / n});
+                // if (depth > 0)
+                    vol_points_.push_back({scatter, ray.D, m, depth, weight / n});
 
                 // Russian roulette.
                 // const float prr = std::max(0.05f, std::min(0.95f, max_component(weight)));
@@ -112,7 +113,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
 
             const uint32_t bsdf_id = scene_.bsdf_id_at(prim);
             const Bsdf&    bsdf    = scene_.bsdf(bsdf_id);
-            if (bsdf.kind == BsdfKind::Diffuse && depth > 0) {
+            if (bsdf.kind == BsdfKind::Diffuse) {
                 points_.push_back({p, oriented_n, ray.D,
                                    bsdf_id, scene_.model().instance_id(prim), depth, weight/n});
             }
