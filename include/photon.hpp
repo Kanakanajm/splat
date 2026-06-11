@@ -21,3 +21,11 @@ struct PhotonBeam {
     uint32_t         bounce_depth;
     tinybvh::bvhvec3 power = {1.0f, 1.0f, 1.0f};
 };
+
+struct VolumePhoton {
+    tinybvh::bvhvec3 position;
+    tinybvh::bvhvec3 incoming_dir;  // photon direction before scatter (normalized)
+    uint32_t         medium_id;
+    uint32_t         bounce_depth;
+    tinybvh::bvhvec3 power = {1.0f, 1.0f, 1.0f};
+};

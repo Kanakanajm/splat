@@ -201,30 +201,68 @@ void DebugUi::drawPhotonBeamPanel(uint32_t max_bounce) {
 void DebugUi::drawCapturePanel(const Camera& camera) {
     if (!ImGui::CollapsingHeader("Capture")) return;
 
-    ImGui::Checkbox("Path tracer mode", &capture_.use_path_tracer);
+    // Render mode radio
+    int mode = capture_.use_path_tracer ? 1 : (capture_.use_photon_mapper ? 2 : 0);
+    bool mode_changed = ImGui::RadioButton("Splat##mode",         &mode, 0); ImGui::SameLine();
+    mode_changed |=     ImGui::RadioButton("Path Tracer##mode",   &mode, 1); ImGui::SameLine();
+    mode_changed |=     ImGui::RadioButton("Photon Mapper##mode", &mode, 2);
+    if (mode_changed) {
+        capture_.use_path_tracer   = (mode == 1);
+        capture_.use_photon_mapper = (mode == 2);
+    }
 
-    if (capture_.use_path_tracer) {
-        ImGui::SetNextItemWidth(160.0f);
-        ImGui::InputInt("SPP",       &capture_.pt_spp);
-        ImGui::SetNextItemWidth(160.0f);
-        ImGui::InputInt("Max depth", &capture_.pt_max_depth);
-
-        ImGui::Separator();
-        ImGui::Checkbox("Compare with Mitsuba", &capture_.compare_with_mitsuba);
-        if (capture_.compare_with_mitsuba) {
-            ImGui::SetNextItemWidth(120.0f);
-            ImGui::InputInt("Checkpoints", &capture_.pt_num_checkpoints);
-            ImGui::SameLine();
-            ImGui::TextDisabled("(1..SPP, equal intervals)");
-        }
-    } else {
+    ImGui::Separator();
+    if (mode == 0) {
+        // Splat mode params
         ImGui::SetNextItemWidth(160.0f);
         ImGui::InputInt("Total photons",    &capture_.total_photons);
         ImGui::SetNextItemWidth(160.0f);
         ImGui::InputInt("Photons per pass", &capture_.photons_per_pass);
+    } else if (mode == 1) {
+        // Path tracer params
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputInt("SPP",       &capture_.pt_spp);
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputInt("Max depth", &capture_.pt_max_depth);
+    } else {
+        // Photon mapper params
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputInt("N photons",      &capture_.pm_n_photons);
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputFloat("r surf",       &capture_.pm_r_surf, 0.005f, 0.1f, "%.4f");
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputFloat("r vol",        &capture_.pm_r_vol,  0.005f, 0.1f, "%.4f");
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputInt("Max cam depth",  &capture_.pm_max_cam_depth);
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputInt("Max emit depth", &capture_.pm_max_emit_depth);
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputInt("SPP",            &capture_.pm_spp);
     }
 
-    if (!capture_.use_path_tracer || !capture_.compare_with_mitsuba) {
+    // Reference comparison (PT and PM only)
+    if (mode > 0) {
+        ImGui::Separator();
+        ImGui::Text("Compare reference:");
+        ImGui::RadioButton("None##ref",        &capture_.compare_reference, 0); ImGui::SameLine();
+        ImGui::RadioButton("Mitsuba##ref",     &capture_.compare_reference, 1); ImGui::SameLine();
+        ImGui::RadioButton("Path Tracer##ref", &capture_.compare_reference, 2);
+        if (capture_.compare_reference > 0) {
+            ImGui::SetNextItemWidth(120.0f);
+            if (mode == 1) {
+                ImGui::InputInt("Checkpoints", &capture_.pt_num_checkpoints);
+            } else {
+                ImGui::InputInt("Checkpoints",   &capture_.pm_num_checkpoints);
+                ImGui::SetNextItemWidth(120.0f);
+                ImGui::InputInt("Compare depth",  &capture_.pm_compare_depth);
+                ImGui::SameLine();
+                ImGui::TextDisabled("(emit+cam = %d)",
+                    capture_.pm_max_emit_depth + capture_.pm_max_cam_depth);
+            }
+        }
+    }
+
+    if (capture_.compare_reference == 0) {
         ImGui::SetNextItemWidth(240.0f);
         ImGui::InputText("Output path", capture_.output_path, sizeof(capture_.output_path));
     }
@@ -235,10 +273,16 @@ void DebugUi::drawCapturePanel(const Camera& camera) {
         ImGui::EndDisabled();
     } else {
         if (ImGui::Button("Render")) {
-            if (capture_.use_path_tracer) {
+            if (mode == 1) {
                 capture_.pt_spp             = std::max(1, capture_.pt_spp);
                 capture_.pt_max_depth       = std::max(1, capture_.pt_max_depth);
                 capture_.pt_num_checkpoints = std::max(1, capture_.pt_num_checkpoints);
+            } else if (mode == 2) {
+                capture_.pm_n_photons       = std::max(1, capture_.pm_n_photons);
+                capture_.pm_max_cam_depth   = std::max(1, capture_.pm_max_cam_depth);
+                capture_.pm_max_emit_depth  = std::max(1, capture_.pm_max_emit_depth);
+                capture_.pm_spp             = std::max(1, capture_.pm_spp);
+                capture_.pm_num_checkpoints = std::max(1, capture_.pm_num_checkpoints);
             } else {
                 capture_.total_photons    = std::max(1, capture_.total_photons);
                 capture_.photons_per_pass = std::max(1, capture_.photons_per_pass);
