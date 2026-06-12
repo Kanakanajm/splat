@@ -202,22 +202,50 @@ void DebugUi::drawCapturePanel(const Camera& camera) {
     if (!ImGui::CollapsingHeader("Capture")) return;
 
     // Render mode radio
-    int mode = capture_.use_path_tracer ? 1 : (capture_.use_photon_mapper ? 2 : 0);
-    bool mode_changed = ImGui::RadioButton("Splat##mode",         &mode, 0); ImGui::SameLine();
+    int mode = capture_.use_path_tracer ? 1 : (capture_.use_photon_mapper ? 2 :
+               (capture_.use_surface_splatter ? 3 : 0));
+    bool mode_changed = ImGui::RadioButton("Beam Splat##mode",    &mode, 0); ImGui::SameLine();
     mode_changed |=     ImGui::RadioButton("Path Tracer##mode",   &mode, 1); ImGui::SameLine();
-    mode_changed |=     ImGui::RadioButton("Photon Mapper##mode", &mode, 2);
+    mode_changed |=     ImGui::RadioButton("Photon Mapper##mode", &mode, 2); ImGui::SameLine();
+    mode_changed |=     ImGui::RadioButton("Surface Splat##mode", &mode, 3);
     if (mode_changed) {
-        capture_.use_path_tracer   = (mode == 1);
-        capture_.use_photon_mapper = (mode == 2);
+        capture_.use_path_tracer      = (mode == 1);
+        capture_.use_photon_mapper    = (mode == 2);
+        capture_.use_surface_splatter = (mode == 3);
     }
 
     ImGui::Separator();
     if (mode == 0) {
-        // Splat mode params
+        // Beam splat mode params
         ImGui::SetNextItemWidth(160.0f);
         ImGui::InputInt("Total photons",    &capture_.total_photons);
         ImGui::SetNextItemWidth(160.0f);
         ImGui::InputInt("Photons per pass", &capture_.photons_per_pass);
+    } else if (mode == 3) {
+        // Surface splat mode params
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputInt("Total photons",    &capture_.total_photons);
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputInt("Photons per pass", &capture_.photons_per_pass);
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputInt("Max emit depth",   &capture_.ss_max_emit_depth);
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputFloat("Bandwidth h",    &capture_.ss_h, 0.001f, 0.05f, "%.4f");
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputFloat("Exposure",       &capture_.ss_exposure, 0.1f, 1.0f, "%.2f");
+
+        ImGui::Separator();
+        ImGui::Checkbox("Compare with PM", &capture_.ss_compare_pm);
+        if (capture_.ss_compare_pm) {
+            ImGui::TextDisabled("PM uses r_surf=h, r_vol=pm_r_vol, n=%d", capture_.pm_n_photons);
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::InputInt("PM SPP",       &capture_.ss_pm_spp);
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::InputInt("Checkpoints",  &capture_.ss_num_checkpoints);
+            ImGui::Checkbox("PM checkpoints", &capture_.ss_pm_save_checkpoints);
+            if (!capture_.ss_pm_save_checkpoints)
+                ImGui::SameLine(), ImGui::TextDisabled("(final only)");
+        }
     } else if (mode == 1) {
         // Path tracer params
         ImGui::SetNextItemWidth(160.0f);
@@ -241,7 +269,7 @@ void DebugUi::drawCapturePanel(const Camera& camera) {
     }
 
     // Reference comparison (PT and PM only)
-    if (mode > 0) {
+    if (mode == 1 || mode == 2) {
         ImGui::Separator();
         ImGui::Text("Compare reference:");
         ImGui::RadioButton("None##ref",        &capture_.compare_reference, 0); ImGui::SameLine();
@@ -262,7 +290,8 @@ void DebugUi::drawCapturePanel(const Camera& camera) {
         }
     }
 
-    if (capture_.compare_reference == 0) {
+    if (mode == 0 || (mode == 3 && !capture_.ss_compare_pm) ||
+        ((mode == 1 || mode == 2) && capture_.compare_reference == 0)) {
         ImGui::SetNextItemWidth(240.0f);
         ImGui::InputText("Output path", capture_.output_path, sizeof(capture_.output_path));
     }
@@ -283,6 +312,16 @@ void DebugUi::drawCapturePanel(const Camera& camera) {
                 capture_.pm_max_emit_depth  = std::max(1, capture_.pm_max_emit_depth);
                 capture_.pm_spp             = std::max(1, capture_.pm_spp);
                 capture_.pm_num_checkpoints = std::max(1, capture_.pm_num_checkpoints);
+            } else if (mode == 3) {
+                capture_.total_photons     = std::max(1, capture_.total_photons);
+                capture_.photons_per_pass  = std::max(1, capture_.photons_per_pass);
+                capture_.ss_max_emit_depth = std::max(1, capture_.ss_max_emit_depth);
+                capture_.ss_h              = std::max(1e-4f, capture_.ss_h);
+                capture_.ss_exposure       = std::max(1e-4f, capture_.ss_exposure);
+                if (capture_.ss_compare_pm) {
+                    capture_.ss_pm_spp          = std::max(1, capture_.ss_pm_spp);
+                    capture_.ss_num_checkpoints = std::max(1, capture_.ss_num_checkpoints);
+                }
             } else {
                 capture_.total_photons    = std::max(1, capture_.total_photons);
                 capture_.photons_per_pass = std::max(1, capture_.photons_per_pass);

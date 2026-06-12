@@ -19,6 +19,7 @@
 #include "photon_tracer.hpp"
 #include "photon_mapper.hpp"
 #include "path_tracer.hpp"
+#include "surface_splatter.hpp"
 #include "ray_camera.hpp"
 #include "random.hpp"
 #include "tiny_bvh.h"
@@ -197,6 +198,7 @@ int main(int argc, char **argv) {
   }
 
   Shader pointShader        ("shaders/point.vs",          "shaders/point.fs");
+  Shader splatShader        ("shaders/splat.vs", "shaders/splat.gs", "shaders/splat.fs");
   Shader beamShader         ("shaders/beam.vs", "shaders/beam.gs", "shaders/beam.fs");
   Shader geomShader         ("shaders/geom.vs",           "shaders/geom.fs");
   Shader depthPeelInitShader("shaders/geom.vs", "shaders/depth_peel_init.fs");
@@ -517,6 +519,107 @@ int main(int argc, char **argv) {
           pm.render(pm_rgb, W, H, pm_cam, 0u, cs.pm_spp);
           save_exr(pm_rgb, cs.output_path);
         }
+
+        cs.is_running = false;
+      } else if (cs.use_surface_splatter) {
+        // --- Surface Splat capture ---
+        const int W = framebufferWidth, H = framebufferHeight;
+        PinholeCamera ss_cam{
+            .eye    = {camera.Position.x, camera.Position.y, camera.Position.z},
+            .target = {camera.Position.x + camera.Front.x,
+                       camera.Position.y + camera.Front.y,
+                       camera.Position.z + camera.Front.z},
+            .up     = {camera.Up.x, camera.Up.y, camera.Up.z},
+            .fov_y  = glm::radians(camera.Zoom),
+            .width  = static_cast<uint32_t>(W),
+            .height = static_cast<uint32_t>(H),
+        };
+
+        SurfaceSplatter ss{scene, bvh, lights,
+                           cs.total_photons, cs.photons_per_pass,
+                           cs.ss_max_emit_depth};
+        std::cout << "[SS] n_photons=" << cs.total_photons
+                  << " per_pass=" << cs.photons_per_pass
+                  << " h=" << cs.ss_h << "\n";
+
+        if (cs.ss_compare_pm) {
+          // --- Checkpointed SS + PM reference comparison ---
+          const std::string out_dir = make_output_dir(scenePath);
+          std::filesystem::create_directories(out_dir);
+          ss_cam.save_json(out_dir + "/camera.json");
+          std::cout << "Output dir: " << out_dir << "\n";
+
+          const std::string venv_py = (
+              std::filesystem::path(argv[0]).parent_path() / "../.venv/bin/python").string();
+          auto run = [](const std::string& cmd) {
+            std::cout << "$ " << cmd << "\n";
+            if (std::system(cmd.c_str()) != 0)
+              std::cerr << "[warning] command returned non-zero\n";
+          };
+          auto save_exr = [&](const std::vector<float>& buf, const char* path) {
+            const char* exrErr = nullptr;
+            if (SaveEXR(buf.data(), W, H, 3, 0, path, &exrErr) != TINYEXR_SUCCESS) {
+              std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+              FreeEXRErrorMessage(exrErr);
+            } else {
+              std::cout << "Saved: " << path << "\n";
+            }
+          };
+
+          // SS checkpoints: evenly spaced pass indices up to K.
+          const int K = (cs.total_photons + cs.photons_per_pass - 1) / cs.photons_per_pass;
+          const int n_ss_cp = std::max(1, std::min(cs.ss_num_checkpoints, K));
+          const auto ss_checkpoints = generate_checkpoints(K, n_ss_cp);
+
+          ss.render_checkpointed(W, H, ss_cam, geomShader, splatShader, accumFbo,
+            ss_checkpoints,
+            [&](int pass, const std::vector<float>& buf) {
+              char fname[512];
+              std::snprintf(fname, sizeof(fname), "%s/ss_pass%04d.exr", out_dir.c_str(), pass);
+              save_exr(buf, fname);
+            }, cs.ss_h, cs.ss_exposure);
+
+          // PM reference: same camera, r_surf = ss_h, spp = ss_pm_spp.
+          const auto pm_checkpoints = cs.ss_pm_save_checkpoints
+              ? generate_checkpoints(cs.ss_pm_spp,
+                                     std::max(1, std::min(cs.ss_num_checkpoints, cs.ss_pm_spp)))
+              : std::vector<int>{cs.ss_pm_spp};
+
+          PhotonMapper pm_ref{scene, bvh, lights,
+                              cs.pm_n_photons, cs.ss_h, cs.pm_r_vol,
+                              /*max_cam_depth=*/1, cs.ss_max_emit_depth};
+          std::cout << "[PM ref] spp=" << cs.ss_pm_spp
+                    << " n_photons=" << cs.pm_n_photons
+                    << " r_surf=" << cs.ss_h
+                    << " max_cam=1 max_emit=" << cs.ss_max_emit_depth << "\n";
+
+          pm_ref.render_checkpointed(W, H, ss_cam, pm_checkpoints,
+            [&](int spp, const std::vector<float>& buf) {
+              char fname[512];
+              std::snprintf(fname, sizeof(fname), "%s/pm_spp%04d.exr", out_dir.c_str(), spp);
+              save_exr(buf, fname);
+            });
+
+          run(venv_py + " tools/convergence_compare.py " + out_dir);
+
+        } else {
+          // --- Single SS render ---
+          std::vector<float> ss_rgb;
+          ss.render(ss_rgb, W, H, ss_cam, geomShader, splatShader, accumFbo, cs.ss_h, cs.ss_exposure);
+
+          const char* exrErr = nullptr;
+          if (SaveEXR(ss_rgb.data(), W, H, 3, 0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
+            std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+            FreeEXRErrorMessage(exrErr);
+          } else {
+            std::cout << "Saved: " << cs.output_path << "\n";
+          }
+        }
+
+        // Restore interactive beams.
+        Rng restore_rng(0xDECAFu);
+        tracer.trace(photonCount, /*max_depth=*/20u, restore_rng);
+        scene.upload_beams(tracer.beams());
 
         cs.is_running = false;
       } else {

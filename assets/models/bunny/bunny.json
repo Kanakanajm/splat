@@ -1,0 +1,14 @@
+{
+  "env_light": {"power": [1.0, 1.0, 1.0]},
+  "mediums": {
+    "fog": { "sigma_s": 0.8, "sigma_a": 0.2 }
+  },
+  "bsdfs": {
+    "grey-diffuse": { "kind": "Diffuse", "color": [0.8, 0.8, 0.8] },
+    "shell": { "kind": "MediumShell" }
+
+  },
+  "instances": {
+    "bunny": { "bsdf": "grey-diffuse"}
+  }
+}
