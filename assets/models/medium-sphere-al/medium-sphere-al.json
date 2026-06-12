@@ -1,0 +1,14 @@
+{
+  "lights": [
+    { "kind": "area", "instance": "light", "emission": [10.0, 10.0, 10.0] }
+  ],
+  "mediums": {
+    "fog": { "sigma_s": 0.8, "sigma_a": 0.2 }
+  },
+  "bsdfs": {
+    "shell": { "kind": "MediumShell" }
+  },
+  "instances": {
+    "Sphere": { "bsdf": "shell", "medium_in": "fog", "medium_out": "vacuum" }
+  }
+}

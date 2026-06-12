@@ -4,6 +4,7 @@ Compute per-checkpoint RMSE and save a log-log convergence plot.
 
 Auto-detects comparison mode from files present in output_dir:
 
+  vs_pass*.exr + pm_spp*.exr   → VS vs PM final  (each VS checkpoint vs last PM)
   ss_pass*.exr + pm_spp*.exr   → SS vs PM final  (each SS checkpoint vs last PM)
   pt_spp*.exr  + mit_spp*.exr  → PT vs Mitsuba   (paired by SPP)
   pm_spp*.exr  + mit_spp*.exr  → PM vs Mitsuba   (paired by SPP)
@@ -79,12 +80,18 @@ def main() -> None:
 
     out = Path(args.output_dir)
 
+    vs  = find_pass_files(out, "vs_pass")
     ss  = find_pass_files(out, "ss_pass")
     pt  = find_spp_files(out, "pt_spp")
     mit = find_spp_files(out, "mit_spp")
     pm  = find_spp_files(out, "pm_spp")
 
-    if ss and pm:
+    if vs and pm:
+        ref_path = pm[max(pm.keys())]
+        pairs = [(pass_n, path, ref_path) for pass_n, path in sorted(vs.items())]
+        plot_rmse(pairs, "VS pass", "VS vs PM (final)", out,
+                  "Volume Splat convergence vs PM reference")
+    elif ss and pm:
         # Each SS checkpoint vs the final (highest-SPP) PM image as reference.
         ref_path = pm[max(pm.keys())]
         pairs = [(pass_n, path, ref_path) for pass_n, path in sorted(ss.items())]

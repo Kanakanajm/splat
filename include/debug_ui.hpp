@@ -17,6 +17,7 @@ struct CaptureState {
     bool use_path_tracer      = false;
     bool use_photon_mapper    = false;
     bool use_surface_splatter = false;
+    bool use_volume_splatter  = false;
 
     // Path tracer params
     int  pt_spp                   = 64;
@@ -43,6 +44,17 @@ struct CaptureState {
     int   ss_pm_spp                 = 64;
     int   ss_num_checkpoints        = 5;
     bool  ss_pm_save_checkpoints    = false;  // false = final image only
+
+    // Volume splat params (total_photons / photons_per_pass shared with beam splat)
+    int   vs_max_emit_depth        = 20;
+    float vs_beam_radius           = 0.05f;
+    float vs_exposure              = 1.0f;
+
+    // Volume splat comparison with PM (r_vol = pm_r_vol, n = pm_n_photons)
+    bool  vs_compare_pm            = false;
+    int   vs_pm_spp                = 64;
+    int   vs_num_checkpoints       = 5;
+    bool  vs_pm_save_checkpoints   = false;
 
     // Reference comparison: 0=None, 1=Mitsuba, 2=PathTracer
     int  compare_reference        = 0;
