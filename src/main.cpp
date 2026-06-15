@@ -20,6 +20,7 @@
 #include "photon_mapper.hpp"
 #include "path_tracer.hpp"
 #include "surface_splatter.hpp"
+#include "volume_splatter.hpp"
 #include "ray_camera.hpp"
 #include "random.hpp"
 #include "tiny_bvh.h"
@@ -200,6 +201,7 @@ int main(int argc, char **argv) {
   Shader pointShader        ("shaders/point.vs",          "shaders/point.fs");
   Shader splatShader        ("shaders/splat.vs", "shaders/splat.gs", "shaders/splat.fs");
   Shader beamShader         ("shaders/beam.vs", "shaders/beam.gs", "shaders/beam.fs");
+  Shader volSplatShader     ("shaders/beam.vs", "shaders/beam.gs", "shaders/vol_splat.fs");
   Shader geomShader         ("shaders/geom.vs",           "shaders/geom.fs");
   Shader depthPeelInitShader("shaders/geom.vs", "shaders/depth_peel_init.fs");
   Shader depthPeelShader    ("shaders/geom.vs", "shaders/depth_peel.fs");
@@ -609,6 +611,105 @@ int main(int argc, char **argv) {
 
           const char* exrErr = nullptr;
           if (SaveEXR(ss_rgb.data(), W, H, 3, 0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
+            std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+            FreeEXRErrorMessage(exrErr);
+          } else {
+            std::cout << "Saved: " << cs.output_path << "\n";
+          }
+        }
+
+        // Restore interactive beams.
+        Rng restore_rng(0xDECAFu);
+        tracer.trace(photonCount, /*max_depth=*/20u, restore_rng);
+        scene.upload_beams(tracer.beams());
+
+        cs.is_running = false;
+      } else if (cs.use_volume_splatter) {
+        // --- Volume Splat capture ---
+        const int W = framebufferWidth, H = framebufferHeight;
+        PinholeCamera vs_cam{
+            .eye    = {camera.Position.x, camera.Position.y, camera.Position.z},
+            .target = {camera.Position.x + camera.Front.x,
+                       camera.Position.y + camera.Front.y,
+                       camera.Position.z + camera.Front.z},
+            .up     = {camera.Up.x, camera.Up.y, camera.Up.z},
+            .fov_y  = glm::radians(camera.Zoom),
+            .width  = static_cast<uint32_t>(W),
+            .height = static_cast<uint32_t>(H),
+        };
+
+        VolumeSplatter vs{scene, bvh, lights,
+                          cs.total_photons, cs.photons_per_pass,
+                          cs.vs_max_emit_depth};
+        std::cout << "[VS] n_photons=" << cs.total_photons
+                  << " per_pass=" << cs.photons_per_pass
+                  << " beam_radius=" << cs.vs_beam_radius << "\n";
+
+        if (cs.vs_compare_pm) {
+          const std::string out_dir = make_output_dir(scenePath);
+          std::filesystem::create_directories(out_dir);
+          vs_cam.save_json(out_dir + "/camera.json");
+          std::cout << "Output dir: " << out_dir << "\n";
+
+          const std::string venv_py = (
+              std::filesystem::path(argv[0]).parent_path() / "../.venv/bin/python").string();
+          auto run = [](const std::string& cmd) {
+            std::cout << "$ " << cmd << "\n";
+            if (std::system(cmd.c_str()) != 0)
+              std::cerr << "[warning] command returned non-zero\n";
+          };
+          auto save_exr = [&](const std::vector<float>& buf, const char* path) {
+            const char* exrErr = nullptr;
+            if (SaveEXR(buf.data(), W, H, 3, 0, path, &exrErr) != TINYEXR_SUCCESS) {
+              std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+              FreeEXRErrorMessage(exrErr);
+            } else {
+              std::cout << "Saved: " << path << "\n";
+            }
+          };
+
+          const int K = (cs.total_photons + cs.photons_per_pass - 1) / cs.photons_per_pass;
+          const int n_vs_cp = std::max(1, std::min(cs.vs_num_checkpoints, K));
+          const auto vs_checkpoints = generate_checkpoints(K, n_vs_cp);
+
+          vs.render_checkpointed(W, H, vs_cam,
+            depthPeelInitShader, depthPeelShader, quadShader, volSplatShader, accumFbo,
+            vs_checkpoints,
+            [&](int pass, const std::vector<float>& buf) {
+              char fname[512];
+              std::snprintf(fname, sizeof(fname), "%s/vs_pass%04d.exr", out_dir.c_str(), pass);
+              save_exr(buf, fname);
+            }, cs.vs_beam_radius, cs.vs_exposure);
+
+          const auto pm_checkpoints = cs.vs_pm_save_checkpoints
+              ? generate_checkpoints(cs.vs_pm_spp,
+                                     std::max(1, std::min(cs.vs_num_checkpoints, cs.vs_pm_spp)))
+              : std::vector<int>{cs.vs_pm_spp};
+
+          PhotonMapper pm_ref{scene, bvh, lights,
+                              cs.pm_n_photons, cs.pm_r_surf, cs.pm_r_vol,
+                              /*max_cam_depth=*/3, cs.vs_max_emit_depth};
+          std::cout << "[PM ref] spp=" << cs.vs_pm_spp
+                    << " n_photons=" << cs.pm_n_photons
+                    << " r_vol=" << cs.pm_r_vol
+                    << " max_cam=3 max_emit=" << cs.vs_max_emit_depth << "\n";
+
+          pm_ref.render_checkpointed(W, H, vs_cam, pm_checkpoints,
+            [&](int spp, const std::vector<float>& buf) {
+              char fname[512];
+              std::snprintf(fname, sizeof(fname), "%s/pm_spp%04d.exr", out_dir.c_str(), spp);
+              save_exr(buf, fname);
+            });
+
+          run(venv_py + " tools/convergence_compare.py " + out_dir);
+        } else {
+          std::vector<float> vs_rgb;
+          vs.render(vs_rgb, W, H, vs_cam,
+            depthPeelInitShader, depthPeelShader, quadShader, volSplatShader, accumFbo,
+            cs.vs_beam_radius, cs.vs_exposure);
+
+          const char* exrErr = nullptr;
+          if (SaveEXR(vs_rgb.data(), W, H, 3, 0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
             std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
             FreeEXRErrorMessage(exrErr);
           } else {

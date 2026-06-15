@@ -105,6 +105,9 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
                                      ray.O.y + t_hit * ray.D.y,
                                      ray.O.z + t_hit * ray.D.z};
 
+            if (sigma_t > 0.0f)
+                beams_.push_back({ray.O, p, m, depth, weight / n});
+
             const tinybvh::bvhvec3 normal = face_normal(scene_.model(), prim);
             // Orient toward incident side so dot(incoming_dir, oriented_n) < 0.
             const float orient = (normal.x*ray.D.x + normal.y*ray.D.y + normal.z*ray.D.z) < 0.0f

@@ -112,7 +112,7 @@ void main() {
         } else if (aov_mode == 4) {
             color = exposure * vPower;
         } else if (aov_mode == 5) {
-            color = exposure * vPower * exp(-vSigmaT * vLength * vT);
+            color = vec3(exp(-vSigmaT * vLength * vT));
         } else {
             color = medium_color(int(vMediumId));
         }
@@ -146,7 +146,7 @@ void main() {
     float sigma_s = (medId >= 0 && medId < MAX_MEDIA) ? mediaSigmaS[medId] : 0.0;
 
     // Beam radiance estimate (Jarosz et al. 2011, eq. 3)
-    vec3 radiance = (exposure * sigma_s * Tr_beam * Tr_cam * INV_4PI / sin_wv) * vPower;
+    vec3 radiance = (exposure * sigma_s * Tr_cam * INV_4PI / sin_wv) * vPower;
 
     FragColor = vec4(radiance, 1.0);
 }

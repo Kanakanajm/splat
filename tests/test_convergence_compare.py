@@ -82,9 +82,29 @@ def test_convergence_plot_saved():
     print("test_convergence_plot_saved PASSED")
 
 
+def test_vs_pm_convergence_plot():
+    import sys as _sys
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        for pass_n in [1, 4]:
+            _write_exr(str(out / f"vs_pass{pass_n:04d}.exr"), value=0.4)
+        _write_exr(str(out / "pm_spp0064.exr"), value=0.5)
+
+        _sys.argv = ["convergence_compare.py", str(out)]
+        cc_main()
+
+        plot = out / "convergence.png"
+        assert plot.exists(), "convergence.png not created"
+        assert plot.stat().st_size > 0, "convergence.png is empty"
+
+    print("test_vs_pm_convergence_plot PASSED")
+
+
 if __name__ == "__main__":
     test_find_pairs()
     test_rmse_identical_images()
     test_rmse_different_images()
     test_convergence_plot_saved()
+    test_vs_pm_convergence_plot()
     print("All convergence_compare tests passed.")
