@@ -14,10 +14,11 @@ struct CaptureState {
     bool triggered        = false;
 
     // Render mode (mutually exclusive)
-    bool use_path_tracer      = false;
-    bool use_photon_mapper    = false;
-    bool use_surface_splatter = false;
-    bool use_volume_splatter  = false;
+    bool use_path_tracer        = false;
+    bool use_photon_mapper      = false;
+    bool use_surface_splatter   = false;
+    bool use_volume_splatter    = false;
+    bool use_combined_splatter  = false;
 
     // Path tracer params
     int  pt_spp                   = 64;
@@ -55,6 +56,13 @@ struct CaptureState {
     int   vs_pm_spp                = 64;
     int   vs_num_checkpoints       = 5;
     bool  vs_pm_save_checkpoints   = false;
+
+    // Combined (PVS) splat params (total_photons / photons_per_pass shared)
+    int   pvs_max_emit_depth  = 20;
+    float pvs_h               = 0.01f;
+    float pvs_beam_radius     = 0.05f;
+    float pvs_exposure        = 1.0f;
+    int   pvs_num_checkpoints = 5;
 
     // Reference comparison: 0=None, 1=Mitsuba, 2=PathTracer
     int  compare_reference        = 0;

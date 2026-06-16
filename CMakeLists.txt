@@ -31,6 +31,7 @@ add_executable(SplatApp
     src/path_tracer.cpp
     src/surface_splatter.cpp
     src/volume_splatter.cpp
+    src/combined_splatter.cpp
     src/scene.cpp
     src/scene_gl.cpp
     src/scene_config.cpp

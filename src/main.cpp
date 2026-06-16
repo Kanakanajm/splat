@@ -21,6 +21,7 @@
 #include "path_tracer.hpp"
 #include "surface_splatter.hpp"
 #include "volume_splatter.hpp"
+#include "combined_splatter.hpp"
 #include "ray_camera.hpp"
 #include "random.hpp"
 #include "tiny_bvh.h"
@@ -716,6 +717,64 @@ int main(int argc, char **argv) {
             std::cout << "Saved: " << cs.output_path << "\n";
           }
         }
+
+        // Restore interactive beams.
+        Rng restore_rng(0xDECAFu);
+        tracer.trace(photonCount, /*max_depth=*/20u, restore_rng);
+        scene.upload_beams(tracer.beams());
+
+        cs.is_running = false;
+      } else if (cs.use_combined_splatter) {
+        // --- Combined (PVS) Splat capture ---
+        const int W = framebufferWidth, H = framebufferHeight;
+        PinholeCamera pvs_cam{
+            .eye    = {camera.Position.x, camera.Position.y, camera.Position.z},
+            .target = {camera.Position.x + camera.Front.x,
+                       camera.Position.y + camera.Front.y,
+                       camera.Position.z + camera.Front.z},
+            .up     = {camera.Up.x, camera.Up.y, camera.Up.z},
+            .fov_y  = glm::radians(camera.Zoom),
+            .width  = static_cast<uint32_t>(W),
+            .height = static_cast<uint32_t>(H),
+        };
+
+        CombinedSplatter pvs{scene, bvh, lights,
+                             cs.total_photons, cs.photons_per_pass,
+                             cs.pvs_max_emit_depth};
+        std::cout << "[PVS] n_photons=" << cs.total_photons
+                  << " per_pass=" << cs.photons_per_pass
+                  << " h=" << cs.pvs_h
+                  << " beam_radius=" << cs.pvs_beam_radius << "\n";
+
+        const std::string out_dir = make_output_dir(scenePath);
+        std::filesystem::create_directories(out_dir);
+        pvs_cam.save_json(out_dir + "/camera.json");
+        std::cout << "Output dir: " << out_dir << "\n";
+
+        auto save_exr = [&](const std::vector<float>& buf, const char* path) {
+          const char* exrErr = nullptr;
+          if (SaveEXR(buf.data(), W, H, 3, 0, path, &exrErr) != TINYEXR_SUCCESS) {
+            std::cerr << "EXR save failed: " << (exrErr ? exrErr : "unknown") << "\n";
+            FreeEXRErrorMessage(exrErr);
+          } else {
+            std::cout << "Saved: " << path << "\n";
+          }
+        };
+
+        const int K = (cs.total_photons + cs.photons_per_pass - 1) / cs.photons_per_pass;
+        const int n_pvs_cp = std::max(1, std::min(cs.pvs_num_checkpoints, K));
+        const auto pvs_checkpoints = generate_checkpoints(K, n_pvs_cp);
+
+        pvs.render_checkpointed(W, H, pvs_cam,
+          geomShader, depthPeelInitShader, depthPeelShader,
+          quadShader, splatShader, volSplatShader, accumFbo,
+          pvs_checkpoints,
+          [&](int pass, const std::vector<float>& buf) {
+            char fname[512];
+            std::snprintf(fname, sizeof(fname), "%s/pvs_pass%04d.exr", out_dir.c_str(), pass);
+            save_exr(buf, fname);
+          },
+          cs.pvs_h, cs.pvs_beam_radius, cs.pvs_exposure);
 
         // Restore interactive beams.
         Rng restore_rng(0xDECAFu);
