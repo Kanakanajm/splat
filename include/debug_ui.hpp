@@ -84,15 +84,15 @@ struct ViewState {
     enum class PointAov : int { InstanceId, BsdfKind, BounceDepth,
                                PowerColor, PowerLuminance, PowerNormalized } pointAov = PointAov::InstanceId;
     std::vector<bool> instancePointsVisible;  // per-instance; empty = all visible
-    bool allBounces      = true;   // show points from all bounce depths
-    int  bounceFilter    = 0;      // active when allBounces == false
+    bool allBounces         = true;   // show points from all bounce depths
+    int  bounceFilter       = 0;      // active when allBounces == false
+    bool showSplatTriangle  = false;  // draw splat triangle footprint instead of GL point
 
     // --- Pixel picker --------------------------------------------------------
     float pick_r = 0.0f, pick_g = 0.0f, pick_b = 0.0f;
     bool  has_pick = false;
 
     // --- Splat pass ----------------------------------------------------------
-    bool  showSplat  = true;
     float splatH     = 0.01f;
     float exposure   = 1.0f;
     enum class SplatAov : int { Radiance, Wireframe, Normal } splatAov = SplatAov::Radiance;
@@ -135,7 +135,7 @@ private:
     void drawGeometryPanel();
     void drawPhotonPointPanel(uint32_t max_bounce);
     void drawPhotonBeamPanel(uint32_t max_bounce);
-    void drawSplatPanel();
+
     void drawCapturePanel(const Camera& camera);
 
     ViewState    state_;

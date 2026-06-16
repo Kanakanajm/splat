@@ -176,6 +176,7 @@ int main(int argc, char **argv) {
   tracer.trace(photonCount, /*max_depth=*/20u, rng);
   scene.upload_geometry();
   scene.upload_points(tracer.points());
+  scene.upload_splats(tracer.points());
   scene.upload_beams(tracer.beams());
   std::cout << "Traced " << tracer.points().size() << " points, " << tracer.beams().size()
             << " beams" << std::endl;
@@ -1055,10 +1056,23 @@ int main(int argc, char **argv) {
 
     // --- Photon point pass
     if (vs.showPoints) {
-      setCameraUniforms(pointShader, projection, view);
-      pointShader.setFloat("pointSize", 3.0f);
       const int bounceFilter = vs.allBounces ? -1 : vs.bounceFilter;
-      scene.draw_points(pointShader, static_cast<int>(vs.pointAov), vs.instancePointsVisible, bounceFilter);
+      if (vs.showSplatTriangle) {
+        // Depth prepass when geometry is hidden so splat triangles are occluded correctly.
+        if (!vs.showGeometry) {
+          glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+          setCameraUniforms(geomShader, projection, view);
+          geomShader.setInt("aov_mode", 1);
+          scene.draw_geometry(geomShader, 1, vs.instanceVisible, false);
+          glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        }
+        setCameraUniforms(splatShader, projection, view);
+        scene.draw_splats(splatShader, vs.splatH, vs.exposure, static_cast<int>(vs.splatAov));
+      } else {
+        setCameraUniforms(pointShader, projection, view);
+        pointShader.setFloat("pointSize", 3.0f);
+        scene.draw_points(pointShader, static_cast<int>(vs.pointAov), vs.instancePointsVisible, bounceFilter);
+      }
     }
 
     // --- Photon beam pass (diagnostic AOV modes only; splat mode handled above)

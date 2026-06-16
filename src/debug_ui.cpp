@@ -86,24 +86,6 @@ void DebugUi::drawGeometryPanel() {
     }
 }
 
-void DebugUi::drawSplatPanel() {
-    if (!ImGui::CollapsingHeader("Splat Pass")) return;
-    ImGui::Checkbox("Show splat", &state_.showSplat);
-    if (!state_.showSplat) return;
-    ImGui::TextDisabled("Requires geometry pass to populate depth buffer.");
-    ImGui::SetNextItemWidth(160.0f);
-    ImGui::SliderFloat("h (bandwidth)", &state_.splatH, 0.001f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-    ImGui::SetNextItemWidth(160.0f);
-    ImGui::SliderFloat("Exposure", &state_.exposure, 0.01f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
-    ImGui::Text("AOV:");
-    ImGui::SameLine();
-    int s = static_cast<int>(state_.splatAov);
-    ImGui::RadioButton("Radiance",  &s, static_cast<int>(ViewState::SplatAov::Radiance));  ImGui::SameLine();
-    ImGui::RadioButton("Wireframe", &s, static_cast<int>(ViewState::SplatAov::Wireframe)); ImGui::SameLine();
-    ImGui::RadioButton("Normal",    &s, static_cast<int>(ViewState::SplatAov::Normal));
-    state_.splatAov = static_cast<ViewState::SplatAov>(s);
-}
-
 void DebugUi::drawPhotonPointPanel(uint32_t max_bounce) {
     if (!ImGui::CollapsingHeader("Photon Points")) return;
 
@@ -143,6 +125,24 @@ void DebugUi::drawPhotonPointPanel(uint32_t max_bounce) {
             if ((i + 1) % 4 != 0) ImGui::SameLine();
         }
         ImGui::NewLine();
+    }
+
+    ImGui::Separator();
+    ImGui::Checkbox("As splat triangle", &state_.showSplatTriangle);
+    if (state_.showSplatTriangle) {
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::SliderFloat("h##pt", &state_.splatH, 0.001f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+        ImGui::Text("Splat AOV:");
+        ImGui::SameLine();
+        int s = static_cast<int>(state_.splatAov);
+        ImGui::RadioButton("Wireframe##pt", &s, static_cast<int>(ViewState::SplatAov::Wireframe)); ImGui::SameLine();
+        ImGui::RadioButton("Normal##pt",    &s, static_cast<int>(ViewState::SplatAov::Normal));    ImGui::SameLine();
+        ImGui::RadioButton("Radiance##pt",  &s, static_cast<int>(ViewState::SplatAov::Radiance));
+        state_.splatAov = static_cast<ViewState::SplatAov>(s);
+        if (state_.splatAov == ViewState::SplatAov::Radiance) {
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::SliderFloat("Exposure##pt", &state_.exposure, 0.01f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+        }
     }
 }
 
@@ -448,7 +448,6 @@ bool DebugUi::draw(const Camera& camera, bool& vsyncEnabled,
     ImGui::Separator();
 
     drawGeometryPanel();
-    drawSplatPanel();
     drawPhotonPointPanel(max_bounce);
     drawPhotonBeamPanel(beam_max_bounce);
     drawCapturePanel(camera);
