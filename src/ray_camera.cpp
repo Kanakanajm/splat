@@ -8,7 +8,7 @@
 
 using json = nlohmann::json;
 
-tinybvh::Ray PinholeCamera::generate_ray(uint32_t px, uint32_t py) const {
+tinybvh::Ray PinholeCamera::generate_ray(uint32_t px, uint32_t py, float dx, float dy) const {
     using tinybvh::bvhvec3;
     using tinybvh::tinybvh_cross;
     using tinybvh::tinybvh_normalize;
@@ -20,8 +20,8 @@ tinybvh::Ray PinholeCamera::generate_ray(uint32_t px, uint32_t py) const {
     const float aspect = static_cast<float>(width) / static_cast<float>(height);
     const float scale  = std::tan(0.5f * fov_y);
 
-    const float nx = (2.0f * (static_cast<float>(px) + 0.5f) / static_cast<float>(width)  - 1.0f) * aspect * scale;
-    const float ny = (1.0f - 2.0f * (static_cast<float>(py) + 0.5f) / static_cast<float>(height)) * scale;
+    const float nx = (2.0f * (static_cast<float>(px) + dx) / static_cast<float>(width)  - 1.0f) * aspect * scale;
+    const float ny = (1.0f - 2.0f * (static_cast<float>(py) + dy) / static_cast<float>(height)) * scale;
 
     const bvhvec3 dir = tinybvh_normalize(
         bvhvec3{forward.x + nx * right.x + ny * cam_up.x,

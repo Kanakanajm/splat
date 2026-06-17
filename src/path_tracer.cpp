@@ -364,7 +364,8 @@ void PathTracer::render(std::vector<float>& out, int width, int height,
                     static_cast<uint64_t>(y * width + x) * static_cast<uint64_t>(spp_) + s;
                 Rng rng{seed};
                 tinybvh::Ray r = cam.generate_ray(
-                    static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                    static_cast<uint32_t>(x), static_cast<uint32_t>(y),
+                    rng.uniform(), rng.uniform());
                 const auto lo = Li(r, start_medium, rng);
                 const int idx = (y * width + x) * 3;
                 out[idx + 0] += lo.x;
@@ -401,7 +402,8 @@ void PathTracer::render_checkpointed(int width, int height, const PinholeCamera&
                                     | static_cast<uint64_t>(s);
                 Rng rng{seed};
                 tinybvh::Ray r = cam.generate_ray(
-                    static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                    static_cast<uint32_t>(x), static_cast<uint32_t>(y),
+                    rng.uniform(), rng.uniform());
                 const auto lo = Li(r, start_medium, rng);
                 const int idx = (y * width + x) * 3;
                 accum[idx + 0] += lo.x;

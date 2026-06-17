@@ -19,9 +19,10 @@ struct PinholeCamera {
     uint32_t         width;
     uint32_t         height;
 
-    // Generate a primary ray through the center of pixel (px, py).
+    // Generate a primary ray through pixel (px, py).
+    // dx, dy are sub-pixel offsets in [0,1); pass 0.5 for pixel-center, rng.uniform() for jitter.
     // Pixel (0,0) is top-left; +x goes right, +y goes down (standard image convention).
-    tinybvh::Ray generate_ray(uint32_t px, uint32_t py) const;
+    tinybvh::Ray generate_ray(uint32_t px, uint32_t py, float dx = 0.5f, float dy = 0.5f) const;
 
     // Project a world-space point to pixel space. Returns nullopt if behind the
     // camera. Returned pixel coords may be outside [0, width) x [0, height) —
