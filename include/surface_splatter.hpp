@@ -12,7 +12,7 @@ class Shader;
 
 class SurfaceSplatter {
 public:
-    SurfaceSplatter(Scene& scene, const tinybvh::BVH& bvh,
+    SurfaceSplatter(Scene& scene, const tinybvh::BVH_SoA& bvh,
                     std::vector<Light> lights,
                     int n_photons_total, int photons_per_pass,
                     int max_emit_depth = 20);
@@ -39,7 +39,7 @@ public:
 
 private:
     Scene&              scene_;
-    const tinybvh::BVH& bvh_;
+    const tinybvh::BVH_SoA& bvh_;
     std::vector<Light>  lights_;
     int                 n_photons_total_;
     int                 photons_per_pass_;

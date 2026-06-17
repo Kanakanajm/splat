@@ -54,7 +54,7 @@ TEST_CASE("PhotonTracer: photons land on Suzanne and project into a debug PPM",
     RayModel model{std::string{kSuzannePath}};
     REQUIRE(model.triangle_count() > 0);
 
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -116,7 +116,7 @@ TEST_CASE("PhotonTracer: photons bounce inside a closed box — point count scal
           "[photon_tracer][bounce]") {
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};  // default bsdf id 0 == Diffuse
@@ -158,7 +158,7 @@ TEST_CASE("PhotonTracer: photons bounce inside a closed box — point count scal
 TEST_CASE("PhotonTracer: only diffuse surfaces store photon points", "[photon_tracer][bsdf]") {
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -178,7 +178,7 @@ TEST_CASE("PhotonTracer: photons inside a participating medium emit beams",
           "[photon_tracer][medium]") {
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -209,7 +209,7 @@ TEST_CASE("PhotonTracer: beams stay inside a single medium cube in vacuum",
     const tinybvh::bvhvec3 hi{0.5f, 0.5f, 0.5f};
     RayModel model{make_box(lo, hi), std::vector<uint32_t>(12u, 0u), 1u};
 
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -258,7 +258,7 @@ TEST_CASE("PhotonTracer: beams stay contained across three nested medium cubes",
     for (uint32_t i = 0; i < 3; ++i) inst.insert(inst.end(), 12u, i);
     RayModel model{std::move(verts), std::move(inst), 3u};
 
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -321,7 +321,7 @@ TEST_CASE("PhotonTracer: passing through a medium-shell switches the current med
     std::vector<uint32_t> inst = {0u, 0u, 1u, 1u};
     RayModel model{std::move(verts), std::move(inst), 2u};
 
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -350,7 +350,7 @@ TEST_CASE("PhotonTracer: stored point carries light power / N on first diffuse h
     // RR is applied after storing the point, so the stored power equals init_weight.
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     // Depth-0 is not stored (direct hits excluded). First stored hit is at depth-1
@@ -382,7 +382,7 @@ TEST_CASE("PhotonTracer [sanity]: depth-1 surface power sum equals albedo * ligh
     // Sum at depth-1 = 0.8N * (P/N) = 0.8 * P.
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     constexpr uint32_t kN     = 100'000;
@@ -413,7 +413,7 @@ TEST_CASE("PhotonTracer [sanity]: surface power ratio per depth equals albedo",
 
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     scene.set_bsdf(1u, Bsdf{BsdfKind::Diffuse, 1.0f, {kAlbedo, kAlbedo, kAlbedo}});
@@ -442,7 +442,7 @@ TEST_CASE("PhotonTracer [sanity]: depth-0 beam power sum equals light flux",
     // All N photons scatter at depth 0. Each beam stores power = light.power/N, sum = light.power.
     RayModel model{make_box({-5.0f, -5.0f, -5.0f}, {5.0f, 5.0f, 5.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     scene.set_medium(1u, Medium{/*sigma_s=*/100.0f, /*sigma_a=*/0.0f});
@@ -474,7 +474,7 @@ TEST_CASE("PhotonTracer [sanity]: beam power ratio per depth equals single-scatt
 
     RayModel model{make_box({-5.0f, -5.0f, -5.0f}, {5.0f, 5.0f, 5.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     auto run = [&](float sigma_a) {
@@ -516,7 +516,7 @@ TEST_CASE("PhotonTracer [sanity]: combined per-depth power sum conserved in loss
 
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     scene.set_bsdf(1u, Bsdf{BsdfKind::Diffuse, 1.0f, {1.0f, 1.0f, 1.0f}});
@@ -545,7 +545,7 @@ TEST_CASE("PhotonTracer: stored point normal is unit-length and oriented toward 
           "[photon_tracer][splat]") {
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     constexpr uint32_t kN = 5000;
@@ -569,7 +569,7 @@ TEST_CASE("PhotonTracer: stored point incoming_dir is unit-length",
           "[photon_tracer][splat]") {
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     constexpr uint32_t kN = 5000;
@@ -593,7 +593,7 @@ TEST_CASE("PhotonTracer: stored point incoming_dir is unit-length",
 TEST_CASE("PhotonTracer: vol_points count equals beams count", "[photon_tracer][vol_points]") {
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     scene.set_medium(1u, Medium{/*sigma_s=*/10.0f, /*sigma_a=*/0.0f});
@@ -609,7 +609,7 @@ TEST_CASE("PhotonTracer: vol_points count equals beams count", "[photon_tracer][
 TEST_CASE("PhotonTracer: vol_points position matches beam end", "[photon_tracer][vol_points]") {
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     scene.set_medium(1u, Medium{/*sigma_s=*/10.0f, /*sigma_a=*/0.0f});
@@ -636,7 +636,7 @@ TEST_CASE("PhotonTracer: vol_points position matches beam end", "[photon_tracer]
 TEST_CASE("PhotonTracer: vol_points incoming_dir is unit-length", "[photon_tracer][vol_points]") {
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     scene.set_medium(1u, Medium{/*sigma_s=*/10.0f, /*sigma_a=*/0.0f});
@@ -656,7 +656,7 @@ TEST_CASE("PhotonTracer: vol_points incoming_dir is unit-length", "[photon_trace
 TEST_CASE("PhotonTracer: vacuum scene has no vol_points", "[photon_tracer][vol_points]") {
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     PointLight light{{0.0f, 0.0f, 0.0f}};
@@ -673,7 +673,7 @@ TEST_CASE("PhotonTracer: beam power equals incident weight at scatter point",
     // Very dense medium (sigma_s=1000) forces an immediate scatter; beam.power = init_weight.
     RayModel model{make_box({-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}),
                    std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};

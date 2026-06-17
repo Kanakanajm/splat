@@ -39,7 +39,7 @@ float power_heuristic(float pdf_a, float pdf_b) {
 
 }  // namespace
 
-PathTracer::PathTracer(const Scene& scene, const tinybvh::BVH& bvh,
+PathTracer::PathTracer(const Scene& scene, const tinybvh::BVH_SoA& bvh,
                        std::vector<Light> lights, int max_depth, int spp)
     : scene_(scene), bvh_(bvh), lights_(std::move(lights)),
       max_depth_(max_depth), spp_(spp) {

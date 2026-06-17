@@ -12,7 +12,7 @@
 #include <iostream>
 #include <vector>
 
-SurfaceSplatter::SurfaceSplatter(Scene& scene, const tinybvh::BVH& bvh,
+SurfaceSplatter::SurfaceSplatter(Scene& scene, const tinybvh::BVH_SoA& bvh,
                                  std::vector<Light> lights,
                                  int n_photons_total, int photons_per_pass,
                                  int max_emit_depth)

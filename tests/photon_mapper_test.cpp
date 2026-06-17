@@ -39,7 +39,7 @@ TEST_CASE("PhotonMapper: emit stores surface photons for diffuse scene",
           "[photon_mapper][emit]") {
     RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
                    std::vector<uint32_t>(12u,0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};  // default BSDF is Diffuse
@@ -61,7 +61,7 @@ TEST_CASE("PhotonMapper: emit stores volume photons for participating medium",
           "[photon_mapper][emit]") {
     RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
                    std::vector<uint32_t>(12u,0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -83,7 +83,7 @@ TEST_CASE("PhotonMapper: no volume photons in vacuum scene",
           "[photon_mapper][emit]") {
     RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
                    std::vector<uint32_t>(12u,0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -109,7 +109,7 @@ TEST_CASE("PhotonMapper: render returns non-zero pixels for indirect lit scene",
           "[photon_mapper][gather][surface]") {
     RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
                    std::vector<uint32_t>(12u,0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     PointLight light{{0.f,0.f,0.f}};
@@ -140,7 +140,7 @@ TEST_CASE("PhotonMapper: render returns zero for non-diffuse (conductor) surface
           "[photon_mapper][gather][surface]") {
     RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
                    std::vector<uint32_t>(12u,0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     scene.set_instance_bsdf(0u, 1u);
@@ -172,7 +172,7 @@ TEST_CASE("PhotonMapper: volume gather returns non-zero inside participating med
     // Dense medium fills the box, walls are conductor so only volume contributes.
     RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
                    std::vector<uint32_t>(12u,0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     scene.set_instance_bsdf(0u, 1u);
@@ -209,7 +209,7 @@ TEST_CASE("PhotonMapper: combined scene has volume + surface contribution",
     // others reach the wall (surface).
     RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
                    std::vector<uint32_t>(12u,0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};  // default Diffuse walls
     scene.set_medium(1u, Medium{/*sigma_s=*/2.f, /*sigma_a=*/0.f});
@@ -243,7 +243,7 @@ TEST_CASE("PhotonMapper: surface photon count scales with n_photons",
           "[photon_mapper][emit]") {
     RayModel model{make_box({-1.f,-1.f,-1.f},{1.f,1.f,1.f}),
                    std::vector<uint32_t>(12u,0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     PointLight light{{0.f,0.f,0.f}};

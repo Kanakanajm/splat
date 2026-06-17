@@ -39,7 +39,7 @@ TEST_CASE("PointLight + BVH: photons cast from outside Suzanne hit the mesh",
     RayModel model{std::string{kSuzannePath}};
     REQUIRE(model.triangle_count() > 0);
 
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     // Suzanne is roughly centered at the origin with extent ~1; place the light

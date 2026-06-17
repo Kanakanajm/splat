@@ -58,7 +58,7 @@ TEST_CASE("Scene: per-instance bsdf/medium assignments are looked up by prim",
 TEST_CASE("PhotonTracer: stored PhotonPoint.bsdf_id comes from Scene assignment",
           "[scene][photon_tracer]") {
     RayModel model{std::string{kSuzannePath}};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};

@@ -109,7 +109,7 @@ TEST_CASE("PathTracer [P1]: NEE direct light matches analytic Lambertian formula
 
     auto verts = make_zquad(0.0f);
     RayModel model{std::move(verts), std::vector<uint32_t>(2u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -139,7 +139,7 @@ TEST_CASE("PathTracer [P1]: black surface returns zero radiance",
           "[path_tracer][vacuum][diffuse]") {
     auto verts = make_zquad(0.0f);
     RayModel model{std::move(verts), std::vector<uint32_t>(2u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -172,7 +172,7 @@ TEST_CASE("PathTracer [P1]: occluded light contributes zero direct lighting",
     std::vector<uint32_t> inst(4u, 0u);
     inst[2] = inst[3] = 1u;
     RayModel model{std::move(verts), std::move(inst), 2u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -214,7 +214,7 @@ TEST_CASE("PathTracer [P2]: Beer-Lambert — radiance ratio matches exp(-sigma_a
     // Single wall quad at z=kD, facing -z (toward camera).
     auto wall = make_zquad(kD);
     RayModel model{std::move(wall), std::vector<uint32_t>(2u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     // Light at camera position (z=0), so it's always unoccluded from the wall.
@@ -260,7 +260,7 @@ TEST_CASE("PathTracer [P2]: single-scatter contribution is positive in pure-scat
 
     auto box_verts = make_box({-kBox,-kBox,-kBox}, {kBox,kBox,kBox});
     RayModel model{std::move(box_verts), std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -300,7 +300,7 @@ TEST_CASE("PathTracer [P3]: combined medium + diffuse surface produces finite ra
 
     auto box_verts = make_box({-kH,-kH,-kH}, {kH,kH,kH});
     RayModel model{std::move(box_verts), std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -333,7 +333,7 @@ TEST_CASE("PathTracer [P3]: vacuum diffuse converges to same value with more SPP
     // Render at two SPP levels; both should give positive, finite, similar results.
     auto box_verts = make_box({-1.f,-1.f,-1.f}, {1.f,1.f,1.f});
     RayModel model{std::move(box_verts), std::vector<uint32_t>(12u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -370,7 +370,7 @@ TEST_CASE("PathTracer: render_checkpointed calls callback at each checkpoint SPP
           "[path_tracer][checkpoint]") {
     auto verts = make_zquad(0.0f);
     RayModel model{std::move(verts), std::vector<uint32_t>(2u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -417,7 +417,7 @@ TEST_CASE("PathTracer: render_checkpointed with empty checkpoints does nothing",
           "[path_tracer][checkpoint]") {
     auto verts = make_zquad(0.0f);
     RayModel model{std::move(verts), std::vector<uint32_t>(2u, 0u), 1u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
     Scene scene{model};
     PathTracer pt{scene, bvh, {}, /*max_depth=*/1, /*spp=*/1};
@@ -448,7 +448,7 @@ TEST_CASE("PathTracer [S4]: camera ray hitting area light returns emission",
     verts.insert(verts.end(), surf_verts.begin(), surf_verts.end());
     std::vector<uint32_t> inst = {0u, 0u, 1u, 1u};
     RayModel model{std::move(verts), std::move(inst), 2u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};
@@ -488,7 +488,7 @@ TEST_CASE("PathTracer [S4]: area light illuminates diffuse surface (analytic che
     verts.insert(verts.end(), surf_verts.begin(), surf_verts.end());
     std::vector<uint32_t> inst = {0u, 0u, 1u, 1u};
     RayModel model{std::move(verts), std::move(inst), 2u};
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     Scene scene{model};

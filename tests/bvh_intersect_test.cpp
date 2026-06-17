@@ -66,8 +66,8 @@ std::vector<bvhvec4> make_uv_sphere(float r, uint32_t stacks, uint32_t slices) {
     return verts;
 }
 
-tinybvh::BVH build(const std::vector<bvhvec4>& verts) {
-    tinybvh::BVH bvh;
+tinybvh::BVH_SoA build(const std::vector<bvhvec4>& verts) {
+    tinybvh::BVH_SoA bvh;
     bvh.Build(verts.data(), static_cast<uint32_t>(verts.size() / 3));
     return bvh;
 }

@@ -25,7 +25,7 @@ tinybvh::bvhvec3 face_normal(const RayModel& model, uint32_t prim) {
 }
 }  // namespace
 
-PhotonMapper::PhotonMapper(const Scene& scene, const tinybvh::BVH& bvh,
+PhotonMapper::PhotonMapper(const Scene& scene, const tinybvh::BVH_SoA& bvh,
                            std::vector<Light> lights,
                            int n_photons, float r_surf, float r_vol,
                            int max_cam_depth, int max_emit_depth)

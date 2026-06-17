@@ -14,7 +14,7 @@ struct PinholeCamera;
 
 class PathTracer {
 public:
-    PathTracer(const Scene& scene, const tinybvh::BVH& bvh,
+    PathTracer(const Scene& scene, const tinybvh::BVH_SoA& bvh,
                std::vector<Light> lights, int max_depth, int spp);
 
     // Render into a flat float RGB buffer [width*height*3], row-major, top-left origin.
@@ -53,7 +53,7 @@ private:
                     float max_dist, uint32_t medium_id) const;
 
     const Scene&        scene_;
-    const tinybvh::BVH& bvh_;
+    const tinybvh::BVH_SoA& bvh_;
     std::vector<Light>  lights_;
     std::unordered_map<uint32_t, size_t> prim_to_area_light_;  // prim → index into lights_
     int                 max_depth_;

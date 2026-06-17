@@ -39,7 +39,7 @@ TEST_CASE("RayModel triangles feed tinybvh without crashing", "[ray_model][tinyb
     RayModel model{std::string{kSuzannePath}};
     REQUIRE(model.triangle_count() > 0);
 
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     tinybvh::Ray ray{tinybvh::bvhvec3{0.0f, 0.0f, 10.0f},

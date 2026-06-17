@@ -64,7 +64,7 @@ TEST_CASE("EnvLight + BVH: photons enter scene and hit Suzanne", "[env_light][bv
     RayModel model{std::string{kSuzannePath}};
     REQUIRE(model.triangle_count() > 0);
 
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(model.triangles().data(), model.triangle_count());
 
     // Suzanne is centered near origin with extent ~1; use R=3.

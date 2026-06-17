@@ -222,7 +222,7 @@ constexpr uint32_t kH = 64;
 
 TEST_CASE("Render triangle: barycentric — BVH matches analytic exactly", "[render][triangle][bary]") {
     const auto verts = make_triangle();
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(verts.data(), static_cast<uint32_t>(verts.size() / 3));
 
     PinholeCamera cam{
@@ -268,7 +268,7 @@ TEST_CASE("Render triangle: barycentric — BVH matches analytic exactly", "[ren
 
 TEST_CASE("Render triangle: geometric normal — BVH matches analytic exactly", "[render][triangle][normal]") {
     const auto verts = make_triangle();
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(verts.data(), static_cast<uint32_t>(verts.size() / 3));
 
     PinholeCamera cam{
@@ -310,7 +310,7 @@ TEST_CASE("Render triangle: geometric normal — BVH matches analytic exactly", 
 
 TEST_CASE("Render quad: depth — BVH matches analytic exactly", "[render][quad][depth]") {
     const auto verts = make_quad();
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(verts.data(), static_cast<uint32_t>(verts.size() / 3));
 
     PinholeCamera cam{
@@ -351,7 +351,7 @@ TEST_CASE("Render sphere: depth — BVH approximates analytic within tessellatio
     constexpr uint32_t kStacks = 64;
     constexpr uint32_t kSlices = 64;
     const auto verts = make_uv_sphere(kR, kStacks, kSlices);
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(verts.data(), static_cast<uint32_t>(verts.size() / 3));
 
     PinholeCamera cam{
@@ -394,7 +394,7 @@ TEST_CASE("Render sphere: normal — BVH face normal vs analytic smooth normal",
     constexpr uint32_t kStacks = 64;
     constexpr uint32_t kSlices = 64;
     const auto verts = make_uv_sphere(kR, kStacks, kSlices);
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(verts.data(), static_cast<uint32_t>(verts.size() / 3));
 
     PinholeCamera cam{
@@ -457,7 +457,7 @@ TEST_CASE("Render two spheres: instance-id fake color", "[render][sphere][instan
     std::fill(tri_instance.begin(),                 tri_instance.begin() + tris_a, 0u);
     std::fill(tri_instance.begin() + tris_a,        tri_instance.end(),            1u);
 
-    tinybvh::BVH bvh;
+    tinybvh::BVH_SoA bvh;
     bvh.Build(all.data(), tris_a + tris_b);
 
     PinholeCamera cam{

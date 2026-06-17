@@ -15,7 +15,7 @@
 static constexpr int kMaxMedia = 16;
 static constexpr int kNoAov    = 0;  // vol_splat.fs has no aov_mode; setInt is a no-op
 
-VolumeSplatter::VolumeSplatter(Scene& scene, const tinybvh::BVH& bvh,
+VolumeSplatter::VolumeSplatter(Scene& scene, const tinybvh::BVH_SoA& bvh,
                                std::vector<Light> lights,
                                int n_photons_total, int photons_per_pass,
                                int max_emit_depth)

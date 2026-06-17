@@ -15,7 +15,7 @@ struct PinholeCamera;
 
 class PhotonMapper {
 public:
-    PhotonMapper(const Scene& scene, const tinybvh::BVH& bvh,
+    PhotonMapper(const Scene& scene, const tinybvh::BVH_SoA& bvh,
                  std::vector<Light> lights,
                  int n_photons, float r_surf, float r_vol,
                  int max_cam_depth, int max_emit_depth = 20);
@@ -41,7 +41,7 @@ private:
                              int depth, Rng& rng) const;
 
     const Scene&        scene_;
-    const tinybvh::BVH& bvh_;
+    const tinybvh::BVH_SoA& bvh_;
     std::vector<Light>  lights_;
     int                 n_photons_;
     float               r_surf_;

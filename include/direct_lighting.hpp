@@ -29,7 +29,7 @@ inline float power_heuristic(float pdf_a, float pdf_b) {
 
 // Transmittance along a shadow ray. Returns 0 if occluded by an opaque surface,
 // otherwise product of exp(-sigma_t * d) over all media segments.
-inline float shadow_Tr(const Scene& scene, const tinybvh::BVH& bvh,
+inline float shadow_Tr(const Scene& scene, const tinybvh::BVH_SoA& bvh,
                         tinybvh::bvhvec3 pos, tinybvh::bvhvec3 wi,
                         float max_dist, uint32_t medium_id) {
     float Tr        = 1.0f;
@@ -67,7 +67,7 @@ inline float shadow_Tr(const Scene& scene, const tinybvh::BVH& bvh,
 }
 
 // NEE from a diffuse surface point p with oriented normal n.
-inline tinybvh::bvhvec3 nee_surface(const Scene& scene, const tinybvh::BVH& bvh,
+inline tinybvh::bvhvec3 nee_surface(const Scene& scene, const tinybvh::BVH_SoA& bvh,
                                      const std::vector<Light>& lights,
                                      const tinybvh::bvhvec3& p,
                                      const tinybvh::bvhvec3& n,
@@ -130,7 +130,7 @@ inline tinybvh::bvhvec3 nee_surface(const Scene& scene, const tinybvh::BVH& bvh,
 }
 
 // NEE from a medium scatter point p inside medium_id.
-inline tinybvh::bvhvec3 nee_medium(const Scene& scene, const tinybvh::BVH& bvh,
+inline tinybvh::bvhvec3 nee_medium(const Scene& scene, const tinybvh::BVH_SoA& bvh,
                                     const std::vector<Light>& lights,
                                     const tinybvh::bvhvec3& p,
                                     uint32_t medium_id, Rng& rng) {

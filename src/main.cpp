@@ -169,7 +169,7 @@ int main(int argc, char **argv) {
   RayModel rayModel(scenePath);
   std::cout << "Scene: " << scenePath << " (" << rayModel.instance_count() << " instances)\n";
 
-  tinybvh::BVH bvh;
+  tinybvh::BVH_SoA bvh;
   bvh.Build(rayModel.triangles().data(), rayModel.triangle_count());
 
   Scene scene(rayModel);
