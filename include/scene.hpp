@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <glm/mat4x4.hpp>
 
 class Shader;  // GL draw helpers take a Shader; defined in scene_gl.cpp (app only)
 
@@ -60,7 +61,11 @@ public:
 
     // --- Surface photon splats (kernel-density estimate on surfaces).
     void upload_splats(const std::vector<PhotonPoint>& points);
+    // Renders all opaque geometry into an RGB16F texture storing world-space face normals.
+    // Must be called before draw_splats to enable per-face anti-bleeding.
+    void render_face_normal(Shader& shader, const glm::mat4& view, const glm::mat4& proj, int w, int h);
     // aov_mode: 0=Radiance (additive), 1=Wireframe, 2=Normal.
+    // Uses face normal buffer (if render_face_normal was called) to discard fragments off the hit face.
     void draw_splats(Shader& splat_shader, float h, float exposure, int aov_mode = 0);
 
     // --- Depth peel (camera-side transmittance maps).
@@ -114,6 +119,13 @@ private:
     unsigned int splat_kernel_tex_   = 0;
     struct SplatRange { uint32_t start; uint32_t count; };
     std::vector<SplatRange> splat_ranges_;
+
+    // GL handles for face normal buffer (0 until first render_face_normal call).
+    unsigned int face_normal_fbo_       = 0;
+    unsigned int face_normal_tex_       = 0;   // RGB16F — world-space face normal
+    unsigned int face_normal_depth_rb_  = 0;
+    int          face_normal_w_         = 0;
+    int          face_normal_h_         = 0;
 
     // GL handles for depth peel (0 until init_depth_peel).
     unsigned int peel_fbo_          = 0;

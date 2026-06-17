@@ -149,6 +149,7 @@ static int common_setup(Scene& scene_, std::vector<Light>& lights_,
                         Shader& quad_shader,
                         Shader& splat_shader,
                         Shader& vol_splat_shader,
+                        Shader& face_normal_shader,
                         unsigned int accum_fbo,
                         float beam_radius, float exposure) {
     const glm::mat4 view          = make_view(cam);
@@ -159,6 +160,9 @@ static int common_setup(Scene& scene_, std::vector<Light>& lights_,
         cam.target.x - cam.eye.x,
         cam.target.y - cam.eye.y,
         cam.target.z - cam.eye.z });
+
+    // 0. Face ID buffer — renders per-pixel triangle IDs once (camera fixed across passes).
+    scene_.render_face_normal(face_normal_shader, view, proj, width, height);
 
     // 1. Depth peel — builds T_cam maps used by background quad and vol_splat shader.
     const int peel_layers = run_depth_peel(scene_, proj, view,
@@ -271,6 +275,7 @@ void CombinedSplatter::render(std::vector<float>& out, int width, int height,
                                Shader& quad_shader,
                                Shader& splat_shader,
                                Shader& vol_splat_shader,
+                               Shader& face_normal_shader,
                                unsigned int accum_fbo,
                                float h, float beam_radius, float exposure) {
     const auto N_total    = static_cast<uint32_t>(n_photons_total_);
@@ -279,7 +284,7 @@ void CombinedSplatter::render(std::vector<float>& out, int width, int height,
 
     common_setup(scene_, lights_, width, height, cam,
                  geom_shader, depth_peel_init_shader, depth_peel_shader,
-                 quad_shader, splat_shader, vol_splat_shader, accum_fbo,
+                 quad_shader, splat_shader, vol_splat_shader, face_normal_shader, accum_fbo,
                  beam_radius, exposure);
 
     PhotonTracer tracer(scene_, bvh_, lights_);
@@ -312,6 +317,7 @@ void CombinedSplatter::render_checkpointed(int width, int height,
                                             Shader& quad_shader,
                                             Shader& splat_shader,
                                             Shader& vol_splat_shader,
+                                            Shader& face_normal_shader,
                                             unsigned int accum_fbo,
                                             const std::vector<int>& checkpoints,
                                             const CheckpointFn& on_checkpoint,
@@ -324,7 +330,7 @@ void CombinedSplatter::render_checkpointed(int width, int height,
 
     common_setup(scene_, lights_, width, height, cam,
                  geom_shader, depth_peel_init_shader, depth_peel_shader,
-                 quad_shader, splat_shader, vol_splat_shader, accum_fbo,
+                 quad_shader, splat_shader, vol_splat_shader, face_normal_shader, accum_fbo,
                  beam_radius, exposure);
 
     PhotonTracer tracer(scene_, bvh_, lights_);

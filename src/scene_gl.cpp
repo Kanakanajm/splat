@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
 
 #include <array>
 #include <cmath>
@@ -393,6 +394,65 @@ void Scene::upload_splats(const std::vector<PhotonPoint>& points) {
         splat_kernel_tex_ = upload_kernel_tex();
 }
 
+void Scene::render_face_normal(Shader& shader, const glm::mat4& view, const glm::mat4& proj, int w, int h) {
+    if (geom_vao_ == 0 || geom_ranges_.empty()) return;
+
+    // Create / resize RGB16F face-normal texture + FBO.
+    if (face_normal_tex_ == 0 || face_normal_w_ != w || face_normal_h_ != h) {
+        if (face_normal_tex_ == 0)      glGenTextures(1, &face_normal_tex_);
+        if (face_normal_depth_rb_ == 0) glGenRenderbuffers(1, &face_normal_depth_rb_);
+        if (face_normal_fbo_ == 0)      glGenFramebuffers(1, &face_normal_fbo_);
+
+        glBindTexture(GL_TEXTURE_2D, face_normal_tex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGB, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glBindRenderbuffer(GL_RENDERBUFFER, face_normal_depth_rb_);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, face_normal_fbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, face_normal_tex_, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, face_normal_depth_rb_);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        face_normal_w_ = w;
+        face_normal_h_ = h;
+    }
+
+    GLint prev_fbo;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fbo);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, face_normal_fbo_);
+    const GLfloat clearNormal[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    glClearBufferfv(GL_COLOR, 0, clearNormal);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+    shader.use();
+    shader.setMat4("view",       view);
+    shader.setMat4("projection", proj);
+
+    glBindVertexArray(geom_vao_);
+    for (uint32_t i = 0; i < static_cast<uint32_t>(geom_ranges_.size()); ++i) {
+        // Skip media shells — photons don't land on them.
+        if (i < instance_medium_in_.size() && instance_medium_in_[i] != 0u)
+            continue;
+        const auto& r = geom_ranges_[i];
+        glDrawArrays(GL_TRIANGLES, static_cast<GLint>(r.start), static_cast<GLsizei>(r.count));
+    }
+    glBindVertexArray(0);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prev_fbo));
+}
+
 void Scene::draw_splats(Shader& splat_shader, float h, float exposure, int aov_mode) {
     if (splats_vao_ == 0 || splat_vertex_count_ == 0) return;
 
@@ -419,6 +479,15 @@ void Scene::draw_splats(Shader& splat_shader, float h, float exposure, int aov_m
     splat_shader.setInt("kernelTex",  0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, splat_kernel_tex_);
+
+    const bool hasFaceNormal = (face_normal_tex_ != 0);
+    splat_shader.setInt("useFaceNormalTest", hasFaceNormal ? 1 : 0);
+    if (hasFaceNormal) {
+        splat_shader.setInt("faceNormalTex", 1);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, face_normal_tex_);
+        glActiveTexture(GL_TEXTURE0);
+    }
 
     glBindVertexArray(splats_vao_);
     glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(splat_vertex_count_));

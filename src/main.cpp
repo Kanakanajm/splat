@@ -202,6 +202,7 @@ int main(int argc, char **argv) {
 
   Shader pointShader        ("shaders/point.vs",          "shaders/point.fs");
   Shader splatShader        ("shaders/splat.vs", "shaders/splat.gs", "shaders/splat.fs");
+  Shader faceNormalShader       ("shaders/face_normal.vs",        "shaders/face_normal.fs");
   Shader beamShader         ("shaders/beam.vs", "shaders/beam.gs", "shaders/beam.fs");
   Shader volSplatShader     ("shaders/beam.vs", "shaders/beam.gs", "shaders/vol_splat.fs");
   Shader geomShader         ("shaders/geom.vs",           "shaders/geom.fs");
@@ -575,7 +576,7 @@ int main(int argc, char **argv) {
           const int n_ss_cp = std::max(1, std::min(cs.ss_num_checkpoints, K));
           const auto ss_checkpoints = generate_checkpoints(K, n_ss_cp);
 
-          ss.render_checkpointed(W, H, ss_cam, geomShader, splatShader, accumFbo,
+          ss.render_checkpointed(W, H, ss_cam, geomShader, splatShader, faceNormalShader, accumFbo,
             ss_checkpoints,
             [&](int pass, const std::vector<float>& buf) {
               char fname[512];
@@ -609,7 +610,7 @@ int main(int argc, char **argv) {
         } else {
           // --- Single SS render ---
           std::vector<float> ss_rgb;
-          ss.render(ss_rgb, W, H, ss_cam, geomShader, splatShader, accumFbo, cs.ss_h, cs.ss_exposure);
+          ss.render(ss_rgb, W, H, ss_cam, geomShader, splatShader, faceNormalShader, accumFbo, cs.ss_h, cs.ss_exposure);
 
           const char* exrErr = nullptr;
           if (SaveEXR(ss_rgb.data(), W, H, 3, 0, cs.output_path, &exrErr) != TINYEXR_SUCCESS) {
@@ -768,7 +769,7 @@ int main(int argc, char **argv) {
 
         pvs.render_checkpointed(W, H, pvs_cam,
           geomShader, depthPeelInitShader, depthPeelShader,
-          quadShader, splatShader, volSplatShader, accumFbo,
+          quadShader, splatShader, volSplatShader, faceNormalShader, accumFbo,
           pvs_checkpoints,
           [&](int pass, const std::vector<float>& buf) {
             char fname[512];
@@ -1058,6 +1059,7 @@ int main(int argc, char **argv) {
     if (vs.showPoints) {
       const int bounceFilter = vs.allBounces ? -1 : vs.bounceFilter;
       if (vs.showSplatTriangle) {
+        scene.render_face_normal(faceNormalShader, view, projection, framebufferWidth, framebufferHeight);
         // Depth prepass when geometry is hidden so splat triangles are occluded correctly.
         if (!vs.showGeometry) {
           glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);

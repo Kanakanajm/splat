@@ -28,6 +28,7 @@ public:
                 Shader& quad_shader,
                 Shader& splat_shader,
                 Shader& vol_splat_shader,
+                Shader& face_normal_shader,
                 unsigned int accum_fbo,
                 float h = 0.01f, float beam_radius = 0.05f, float exposure = 1.0f);
 
@@ -40,6 +41,7 @@ public:
                              Shader& quad_shader,
                              Shader& splat_shader,
                              Shader& vol_splat_shader,
+                             Shader& face_normal_shader,
                              unsigned int accum_fbo,
                              const std::vector<int>& checkpoints,
                              const CheckpointFn& on_checkpoint,

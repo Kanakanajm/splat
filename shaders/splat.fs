@@ -7,15 +7,24 @@ in float vCosTheta;
 in vec3  vNormal;
 
 uniform sampler2D kernelTex;
+uniform sampler2D faceNormalTex;
 uniform float     h;
 uniform float     exposure;
-uniform int       aov_mode;  // 0=Radiance, 1=Wireframe, 2=Normal
+uniform int       aov_mode;       // 0=Radiance, 1=Wireframe, 2=Normal
+uniform int       useFaceNormalTest;  // 1 = discard fragments whose face normal diverges
 
 out vec4 FragColor;
 
 const float PI = 3.14159265358979;
 
 void main() {
+    if (useFaceNormalTest != 0) {
+        vec3 visibleNormal = texelFetch(faceNormalTex, ivec2(gl_FragCoord.xy), 0).rgb;
+        // Threshold allows ~8° deviation (cos 8° ≈ 0.99) for imperfect planar quads,
+        // while still rejecting splats that bleed onto perpendicular surfaces (dot ≈ 0).
+        if (abs(dot(visibleNormal, vNormal)) < 0.99) discard;
+    }
+
     if (aov_mode == 1) {
         // Wireframe: flat yellow-white so lines are visible on dark background.
         FragColor = vec4(1.0, 0.9, 0.4, 1.0);

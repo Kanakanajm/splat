@@ -23,7 +23,7 @@ SurfaceSplatter::SurfaceSplatter(Scene& scene, const tinybvh::BVH& bvh,
 
 void SurfaceSplatter::render(std::vector<float>& out, int width, int height,
                               const PinholeCamera& cam,
-                              Shader& geom_shader, Shader& splat_shader,
+                              Shader& geom_shader, Shader& splat_shader, Shader& face_normal_shader,
                               unsigned int fbo,
                               float h, float exposure) {
     const auto N_total    = static_cast<uint32_t>(n_photons_total_);
@@ -37,6 +37,8 @@ void SurfaceSplatter::render(std::vector<float>& out, int width, int height,
         glm::vec3(cam.up.x,     cam.up.y,     cam.up.z));
     const glm::mat4 proj  = glm::perspective(cam.fov_y, aspect, 0.1f, 100.0f);
     const glm::mat4 model(1.0f);
+
+    scene_.render_face_normal(face_normal_shader, view, proj, width, height);
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -96,7 +98,7 @@ void SurfaceSplatter::render(std::vector<float>& out, int width, int height,
 
 void SurfaceSplatter::render_checkpointed(int width, int height,
                                            const PinholeCamera& cam,
-                                           Shader& geom_shader, Shader& splat_shader,
+                                           Shader& geom_shader, Shader& splat_shader, Shader& face_normal_shader,
                                            unsigned int fbo,
                                            const std::vector<int>& checkpoints,
                                            const CheckpointFn& on_checkpoint,
@@ -114,6 +116,8 @@ void SurfaceSplatter::render_checkpointed(int width, int height,
         glm::vec3(cam.up.x,     cam.up.y,     cam.up.z));
     const glm::mat4 proj  = glm::perspective(cam.fov_y, aspect, 0.1f, 100.0f);
     const glm::mat4 model(1.0f);
+
+    scene_.render_face_normal(face_normal_shader, view, proj, width, height);
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
