@@ -21,9 +21,10 @@
 | [splat_v15_status.md](splat_v15_status.md) | `surface-splat` | Throughput (instancing reverted), direct shadow map done; stencil surface bleeding deferred. Merged to main (PR #13). |
 | [capture_status.md](capture_status.md) | `capture` | Multi-pass offline capture: sub-pass trace → GPU accumulation → EXR export via tinyexr. Merged to main (PR #14). |
 | [vol_splat_beam_status.md](vol_splat_beam_status.md) | `vol-splat` | Full beam radiance estimate (Tr camera-side + beam-side, phase, kernel); HDR pipeline; env/multi-light; capture integration. |
+| [path_tracer_status.md](path_tracer_status.md) | `pathtracer` | PT baseline complete: MIS (point/env/area lights), `shadow_Tr`, Mitsuba exporter (volpath, media, area lights), Mitsuba runner + RMSE convergence plot. 87/87 tests. |
 
 # On-going
 
 | Savepoint | Branch | Summary |
 |---|---|---|
-| [path_tracer_status.md](path_tracer_status.md) | `pathtracer` | PT baseline complete: MIS (point/env/area lights), `shadow_Tr`, Mitsuba exporter (volpath, media, area lights), Mitsuba runner + RMSE convergence plot. 87/87 tests. |
+| [capture_and_comparison_refactoring_status.md](capture_and_comparison_refactoring_status.md) | `integr/splat-all` | Chunks A+B+C done: multi-method capture, manifest.json, convergence_compare.py refactor, requirements.txt, README.md. Chunk D (CLI) deferred. |

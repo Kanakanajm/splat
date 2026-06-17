@@ -7,69 +7,65 @@ class Camera;
 struct GLFWwindow;
 
 struct CaptureState {
-    int  total_photons    = 1000000;
-    int  photons_per_pass = 100000;
-    char output_path[256] = "output.exr";
-    bool is_running       = false;
-    bool triggered        = false;
+    bool is_running = false;
+    bool triggered  = false;
 
-    // Render mode (mutually exclusive)
-    bool use_path_tracer        = false;
-    bool use_photon_mapper      = false;
-    bool use_surface_splatter   = false;
-    bool use_volume_splatter    = false;
-    bool use_combined_splatter  = false;
+    // Per-method enable flags (independent checkboxes)
+    bool capture_pt      = false;
+    bool capture_pm      = false;
+    bool capture_ss      = false;
+    bool capture_vs      = false;
+    bool capture_pvs     = false;
+    bool capture_mitsuba = false;
+
+    // Shared SPP checkpoint schedule (PT, PM, Mitsuba use the same list)
+    int shared_max_spp         = 64;
+    int shared_num_checkpoints = 6;
 
     // Path tracer params
-    int  pt_spp                   = 64;
-    int  pt_max_depth             = 8;
-    int  pt_num_checkpoints       = 6;
+    int pt_max_depth = 8;
 
     // Photon mapper params
-    int   pm_n_photons        = 100000;
-    float pm_r_surf           = 0.05f;
-    float pm_r_vol            = 0.05f;
-    int   pm_max_cam_depth    = 3;
-    int   pm_max_emit_depth   = 5;
-    int   pm_spp              = 4;
-    int   pm_num_checkpoints  = 5;
-    int   pm_compare_depth    = 8;  // default = pm_max_emit_depth + pm_max_cam_depth
+    int   pm_n_photons      = 100000;
+    float pm_r_surf         = 0.05f;
+    float pm_r_vol          = 0.05f;
+    int   pm_max_cam_depth  = 3;
+    int   pm_max_emit_depth = 5;
 
-    // Surface splat params (total_photons / photons_per_pass shared with beam splat)
-    int   ss_max_emit_depth  = 20;
-    float ss_h               = 0.01f;
-    float ss_exposure        = 1.0f;
+    // Surface splat params
+    int   ss_total_photons    = 1000000;
+    int   ss_photons_per_pass = 100000;
+    int   ss_max_emit_depth   = 20;
+    float ss_h                = 0.01f;
+    float ss_exposure         = 1.0f;
+    int   ss_num_checkpoints  = 5;
 
-    // Surface splat comparison with PM (r_surf = ss_h, r_vol = pm_r_vol)
-    bool  ss_compare_pm             = false;
-    int   ss_pm_spp                 = 64;
-    int   ss_num_checkpoints        = 5;
-    bool  ss_pm_save_checkpoints    = false;  // false = final image only
+    // Volume splat params
+    int   vs_total_photons    = 1000000;
+    int   vs_photons_per_pass = 100000;
+    int   vs_max_emit_depth   = 20;
+    float vs_beam_radius      = 0.05f;
+    float vs_exposure         = 1.0f;
+    int   vs_num_checkpoints  = 5;
 
-    // Volume splat params (total_photons / photons_per_pass shared with beam splat)
-    int   vs_max_emit_depth        = 20;
-    float vs_beam_radius           = 0.05f;
-    float vs_exposure              = 1.0f;
+    // Combined (PVS) splat params
+    int   pvs_total_photons    = 1000000;
+    int   pvs_photons_per_pass = 100000;
+    int   pvs_max_emit_depth   = 20;
+    float pvs_h                = 0.01f;
+    float pvs_beam_radius      = 0.05f;
+    float pvs_exposure         = 1.0f;
+    int   pvs_num_checkpoints  = 5;
 
-    // Volume splat comparison with PM (r_vol = pm_r_vol, n = pm_n_photons)
-    bool  vs_compare_pm            = false;
-    int   vs_pm_spp                = 64;
-    int   vs_num_checkpoints       = 5;
-    bool  vs_pm_save_checkpoints   = false;
+    // Mitsuba params (SPP comes from shared schedule)
+    int mit_max_depth = 8;
 
-    // Combined (PVS) splat params (total_photons / photons_per_pass shared)
-    int   pvs_max_emit_depth  = 20;
-    float pvs_h               = 0.01f;
-    float pvs_beam_radius     = 0.05f;
-    float pvs_exposure        = 1.0f;
-    int   pvs_num_checkpoints = 5;
-
-    // Reference comparison: 0=None, 1=Mitsuba, 2=PathTracer
-    int  compare_reference        = 0;
+    // Currently rendering method name (set by main loop, shown in UI)
+    char current_method[64] = "";
 
     // Camera inspector
-    char camera_json_path[256]    = "";
-    bool pending_camera_load      = false;
+    char camera_json_path[256] = "";
+    bool pending_camera_load   = false;
 };
 
 struct ViewState {
