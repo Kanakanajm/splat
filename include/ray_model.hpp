@@ -20,6 +20,10 @@ public:
     const std::vector<tinybvh::bvhvec4>& triangles() const { return tris_; }
     uint32_t triangle_count() const { return static_cast<uint32_t>(tri_instance_.size()); }
 
+    // Interpolated smooth normal at a hit point given tinybvh barycentric coords (u, v).
+    tinybvh::bvhvec3 smooth_normal(uint32_t prim, float u, float v) const;
+    bool has_vertex_normals() const { return !vertex_normals_.empty(); }
+
     uint32_t instance_id(uint32_t prim) const { return tri_instance_[prim]; }
     uint32_t instance_count() const { return instance_count_; }
 
@@ -30,8 +34,9 @@ public:
     std::optional<uint32_t> find_instance(const std::string& name) const;
 
 private:
-    std::vector<tinybvh::bvhvec4> tris_;          // 3 * triangle_count entries, tinybvh "fat triangle" layout
-    std::vector<uint32_t>         tri_instance_;  // size == triangle_count
+    std::vector<tinybvh::bvhvec4> tris_;            // 3 * triangle_count entries, tinybvh "fat triangle" layout
+    std::vector<tinybvh::bvhvec4> vertex_normals_;  // 3 * triangle_count, parallel to tris_; empty if unavailable
+    std::vector<uint32_t>         tri_instance_;    // size == triangle_count
     uint32_t                      instance_count_ = 0;
-    std::vector<std::string>      instance_names_; // size == instance_count, empty for procedural
+    std::vector<std::string>      instance_names_;  // size == instance_count, empty for procedural
 };

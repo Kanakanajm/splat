@@ -22,7 +22,7 @@ void main() {
         vec3 visibleNormal = texelFetch(faceNormalTex, ivec2(gl_FragCoord.xy), 0).rgb;
         // Threshold allows ~8° deviation (cos 8° ≈ 0.99) for imperfect planar quads,
         // while still rejecting splats that bleed onto perpendicular surfaces (dot ≈ 0).
-        if (abs(dot(visibleNormal, vNormal)) < 0.99) discard;
+        if (abs(dot(visibleNormal, vNormal)) < 0.999) discard;
     }
 
     if (aov_mode == 1) {

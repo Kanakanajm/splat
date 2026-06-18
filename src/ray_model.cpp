@@ -20,7 +20,7 @@ RayModel::RayModel(const std::string& path) {
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(
         path,
-        aiProcess_Triangulate | aiProcess_PreTransformVertices);
+        aiProcess_Triangulate | aiProcess_PreTransformVertices | aiProcess_GenSmoothNormals);
 
     if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !scene->mRootNode) {
         std::cerr << "ERROR::ASSIMP::" << importer.GetErrorString() << std::endl;
@@ -32,12 +32,18 @@ RayModel::RayModel(const std::string& path) {
     for (uint32_t m = 0; m < scene->mNumMeshes; ++m) {
         const aiMesh* mesh = scene->mMeshes[m];
         instance_names_.emplace_back(mesh->mName.C_Str());
+        const bool has_normals = mesh->HasNormals();
         for (uint32_t f = 0; f < mesh->mNumFaces; ++f) {
             const aiFace& face = mesh->mFaces[f];
             if (face.mNumIndices != 3) continue;
             for (uint32_t i = 0; i < 3; ++i) {
-                const aiVector3D& v = mesh->mVertices[face.mIndices[i]];
+                const uint32_t idx = face.mIndices[i];
+                const aiVector3D& v = mesh->mVertices[idx];
                 tris_.emplace_back(v.x, v.y, v.z, 0.0f);
+                if (has_normals) {
+                    const aiVector3D& n = mesh->mNormals[idx];
+                    vertex_normals_.emplace_back(n.x, n.y, n.z, 0.0f);
+                }
             }
             tri_instance_.push_back(m);
         }
@@ -54,4 +60,22 @@ std::optional<uint32_t> RayModel::find_instance(const std::string& name) const {
         if (instance_names_[i] == name) return i;
     }
     return std::nullopt;
+}
+
+tinybvh::bvhvec3 RayModel::smooth_normal(uint32_t prim, float u, float v) const {
+    if (vertex_normals_.empty()) {
+        // Fallback: flat geometric normal (e.g. procedural test meshes).
+        const tinybvh::bvhvec3 v0{tris_[prim*3+0].x, tris_[prim*3+0].y, tris_[prim*3+0].z};
+        const tinybvh::bvhvec3 v1{tris_[prim*3+1].x, tris_[prim*3+1].y, tris_[prim*3+1].z};
+        const tinybvh::bvhvec3 v2{tris_[prim*3+2].x, tris_[prim*3+2].y, tris_[prim*3+2].z};
+        return tinybvh::tinybvh_normalize(tinybvh::tinybvh_cross(v1 - v0, v2 - v0));
+    }
+    const float w = 1.0f - u - v;
+    const auto& n0 = vertex_normals_[prim * 3 + 0];
+    const auto& n1 = vertex_normals_[prim * 3 + 1];
+    const auto& n2 = vertex_normals_[prim * 3 + 2];
+    return tinybvh::tinybvh_normalize(tinybvh::bvhvec3{
+        w * n0.x + u * n1.x + v * n2.x,
+        w * n0.y + u * n1.y + v * n2.y,
+        w * n0.z + u * n1.z + v * n2.z});
 }

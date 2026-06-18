@@ -8,16 +8,6 @@
 
 namespace {
 
-// Geometric (face) normal of a triangle from the model's flat fat-triangle buffer.
-// Not oriented — Bsdf::sample flips it onto the incident side.
-tinybvh::bvhvec3 face_normal(const RayModel& model, uint32_t prim) {
-    const auto& tris = model.triangles();
-    const tinybvh::bvhvec3 v0{tris[prim * 3 + 0].x, tris[prim * 3 + 0].y, tris[prim * 3 + 0].z};
-    const tinybvh::bvhvec3 v1{tris[prim * 3 + 1].x, tris[prim * 3 + 1].y, tris[prim * 3 + 1].z};
-    const tinybvh::bvhvec3 v2{tris[prim * 3 + 2].x, tris[prim * 3 + 2].y, tris[prim * 3 + 2].z};
-    return tinybvh::tinybvh_normalize(tinybvh::tinybvh_cross(v1 - v0, v2 - v0));
-}
-
 float max_component(const tinybvh::bvhvec3& v) {
     return std::max({v.x, v.y, v.z});
 }
@@ -108,7 +98,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
             if (sigma_t > 0.0f)
                 beams_.push_back({ray.O, p, m, depth, weight / n});
 
-            const tinybvh::bvhvec3 normal = face_normal(scene_.model(), prim);
+            const tinybvh::bvhvec3 normal = scene_.model().smooth_normal(prim, ray.hit.u, ray.hit.v);
             // Orient toward incident side so dot(incoming_dir, oriented_n) < 0.
             const float orient = (normal.x*ray.D.x + normal.y*ray.D.y + normal.z*ray.D.z) < 0.0f
                                      ? 1.0f : -1.0f;

@@ -15,14 +15,6 @@ constexpr float kEps    = 1e-4f;
 constexpr float kInvPi  = 1.0f / 3.14159265358979f;
 constexpr float kInv4Pi = 1.0f / (4.0f * 3.14159265358979f);
 
-tinybvh::bvhvec3 face_normal(const RayModel& model, uint32_t prim) {
-    const auto& tris = model.triangles();
-    const tinybvh::bvhvec3 v0{tris[prim*3+0].x, tris[prim*3+0].y, tris[prim*3+0].z};
-    const tinybvh::bvhvec3 v1{tris[prim*3+1].x, tris[prim*3+1].y, tris[prim*3+1].z};
-    const tinybvh::bvhvec3 v2{tris[prim*3+2].x, tris[prim*3+2].y, tris[prim*3+2].z};
-    return tinybvh::tinybvh_normalize(tinybvh::tinybvh_cross(v1 - v0, v2 - v0));
-}
-
 float vec_len(const tinybvh::bvhvec3& v) {
     return std::sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
 }
@@ -287,7 +279,7 @@ tinybvh::bvhvec3 PathTracer::Li(tinybvh::Ray ray, uint32_t medium_id, Rng& rng) 
                                       ray.O.y + t_hit*ray.D.y,
                                       ray.O.z + t_hit*ray.D.z};
 
-            const tinybvh::bvhvec3 normal = face_normal(scene_.model(), prim);
+            const tinybvh::bvhvec3 normal = scene_.model().smooth_normal(prim, ray.hit.u, ray.hit.v);
             const float orient = (normal.x*ray.D.x + normal.y*ray.D.y + normal.z*ray.D.z) < 0.0f
                 ? 1.0f : -1.0f;
             const tinybvh::bvhvec3 oriented_n{normal.x*orient, normal.y*orient, normal.z*orient};
