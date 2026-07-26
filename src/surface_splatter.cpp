@@ -172,6 +172,11 @@ void SurfaceSplatter::render_checkpointed(int width, int height,
                     snap[dst + 1] = raw[src + 1];
                     snap[dst + 2] = raw[src + 2];
                 }
+            // Photon powers are normalised by N_total but only pass·N_per_pass
+            // photons are in the FBO — rescale to the unbiased running estimate.
+            const float scale = static_cast<float>(N_total)
+                              / (static_cast<float>(pass) * static_cast<float>(N_per_pass));
+            for (float& v : snap) v *= scale;
             on_checkpoint(pass, snap);
             ++ci;
         }

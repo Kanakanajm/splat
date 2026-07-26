@@ -327,6 +327,11 @@ void VolumeSplatter::render_checkpointed(int width, int height,
     PhotonTracer tracer(scene_, bvh_, lights_);
     std::vector<float> snap;
 
+    // Background (non-photon) term, captured before any beam pass so checkpoint
+    // snapshots can rescale only the accumulated photon contribution.
+    std::vector<float> bg;
+    readback_rgb(bg, width, height);
+
     int ci = 0;
     for (int pass = 1; pass <= K; ++pass) {
         if (should_cancel && should_cancel()) {
@@ -347,6 +352,13 @@ void VolumeSplatter::render_checkpointed(int width, int height,
 
         if (ci < static_cast<int>(checkpoints.size()) && pass == checkpoints[ci]) {
             readback_rgb(snap, width, height);
+            // Photon powers are normalised by N_total but only pass·N_per_pass
+            // photons are in the FBO — rescale the photon term (snapshot minus
+            // background) to the unbiased running estimate.
+            const float scale = static_cast<float>(N_total)
+                              / (static_cast<float>(pass) * static_cast<float>(N_per_pass));
+            for (std::size_t i = 0; i < snap.size(); ++i)
+                snap[i] = bg[i] + scale * (snap[i] - bg[i]);
             on_checkpoint(pass, snap);
             ++ci;
         }
