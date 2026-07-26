@@ -22,6 +22,8 @@ public:
 
     // Interpolated smooth normal at a hit point given tinybvh barycentric coords (u, v).
     tinybvh::bvhvec3 smooth_normal(uint32_t prim, float u, float v) const;
+    // Per-vertex normal for the i-th vertex (0,1,2) of a triangle.
+    tinybvh::bvhvec3 vertex_normal(uint32_t prim, uint32_t i) const;
     bool has_vertex_normals() const { return !vertex_normals_.empty(); }
 
     uint32_t instance_id(uint32_t prim) const { return tri_instance_[prim]; }

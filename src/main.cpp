@@ -75,6 +75,13 @@ const unsigned int SCR_HEIGHT = 400;
 int framebufferWidth = SCR_WIDTH;
 int framebufferHeight = SCR_HEIGHT;
 
+// Resize is deferred while a capture render polls events: recreating the
+// accumulation FBO mid-capture would destroy the accumulated result.
+bool captureActive  = false;
+bool pendingResize  = false;
+int  pendingResizeW = 0;
+int  pendingResizeH = 0;
+
 // camera (frames the origin-centered nested cubes; fly with WASD + right-drag)
 Camera camera(glm::vec3(0.0f, 0.0f, 2.0f));
 float lastX = SCR_WIDTH / 2.0f;
@@ -323,6 +330,17 @@ int main(int argc, char **argv) {
     if (cs.triggered && !cs.is_running) {
       cs.triggered  = false;
       cs.is_running = true;
+      captureActive = true;
+
+      // Esc cancels the running method and skips the remaining ones; EXR
+      // checkpoints already written stay on disk.
+      bool capture_cancelled = false;
+      const auto should_cancel = [&]() {
+        glfwPollEvents();
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+          capture_cancelled = true;
+        return capture_cancelled;
+      };
 
       const int W = framebufferWidth, H = framebufferHeight;
 
@@ -374,7 +392,7 @@ int main(int argc, char **argv) {
 
       nlohmann::json manifest_methods = nlohmann::json::array();
 
-      if (cs.capture_pt) {
+      if (cs.capture_pt && !capture_cancelled) {
         std::snprintf(cs.current_method, sizeof(cs.current_method), "PT");
         PathTracer pt{scene, bvh, lights, cs.pt_max_depth, cs.shared_max_spp};
         std::cout << "[PT] spp=" << cs.shared_max_spp
@@ -387,7 +405,7 @@ int main(int argc, char **argv) {
             save_exr(buf, fname);
             char base[64]; std::snprintf(base, sizeof(base), "pt_spp%04d.exr", spp);
             pt_files.push_back(base);
-          });
+          }, 0u, should_cancel);
         manifest_methods.push_back({
           {"type", "pt"},
           {"params", {{"max_spp", cs.shared_max_spp}, {"max_depth", cs.pt_max_depth}}},
@@ -396,7 +414,7 @@ int main(int argc, char **argv) {
         });
       }
 
-      if (cs.capture_pm) {
+      if (cs.capture_pm && !capture_cancelled) {
         std::snprintf(cs.current_method, sizeof(cs.current_method), "PM");
         PhotonMapper pm{scene, bvh, lights,
                         cs.pm_n_photons, cs.pm_r_surf, cs.pm_r_vol,
@@ -413,7 +431,7 @@ int main(int argc, char **argv) {
             save_exr(buf, fname);
             char base[64]; std::snprintf(base, sizeof(base), "pm_spp%04d.exr", spp);
             pm_files.push_back(base);
-          });
+          }, 0u, should_cancel);
         manifest_methods.push_back({
           {"type", "pm"},
           {"params", {{"max_spp", cs.shared_max_spp},
@@ -427,7 +445,7 @@ int main(int argc, char **argv) {
         });
       }
 
-      if (cs.capture_ss) {
+      if (cs.capture_ss && !capture_cancelled) {
         std::snprintf(cs.current_method, sizeof(cs.current_method), "SS");
         SurfaceSplatter ss{scene, bvh, lights,
                            cs.ss_total_photons, cs.ss_photons_per_pass,
@@ -448,7 +466,7 @@ int main(int argc, char **argv) {
             save_exr(buf, fname);
             char base[64]; std::snprintf(base, sizeof(base), "ss_pass%04d.exr", pass);
             ss_files.push_back(base);
-          }, cs.ss_h, cs.ss_exposure);
+          }, cs.ss_h, cs.ss_exposure, should_cancel);
         manifest_methods.push_back({
           {"type", "ss"},
           {"params", {{"total_photons", cs.ss_total_photons},
@@ -461,7 +479,7 @@ int main(int argc, char **argv) {
         });
       }
 
-      if (cs.capture_vs) {
+      if (cs.capture_vs && !capture_cancelled) {
         std::snprintf(cs.current_method, sizeof(cs.current_method), "VS");
         VolumeSplatter vs{scene, bvh, lights,
                           cs.vs_total_photons, cs.vs_photons_per_pass,
@@ -482,7 +500,7 @@ int main(int argc, char **argv) {
             save_exr(buf, fname);
             char base[64]; std::snprintf(base, sizeof(base), "vs_pass%04d.exr", pass);
             vs_files.push_back(base);
-          }, cs.vs_beam_radius, cs.vs_exposure);
+          }, cs.vs_beam_radius, cs.vs_exposure, should_cancel);
         manifest_methods.push_back({
           {"type", "vs"},
           {"params", {{"total_photons", cs.vs_total_photons},
@@ -495,7 +513,7 @@ int main(int argc, char **argv) {
         });
       }
 
-      if (cs.capture_pvs) {
+      if (cs.capture_pvs && !capture_cancelled) {
         std::snprintf(cs.current_method, sizeof(cs.current_method), "PVS");
         CombinedSplatter pvs{scene, bvh, lights,
                              cs.pvs_total_photons, cs.pvs_photons_per_pass,
@@ -519,7 +537,7 @@ int main(int argc, char **argv) {
             char base[64]; std::snprintf(base, sizeof(base), "pvs_pass%04d.exr", pass);
             pvs_files.push_back(base);
           },
-          cs.pvs_h, cs.pvs_beam_radius, cs.pvs_exposure);
+          cs.pvs_h, cs.pvs_beam_radius, cs.pvs_exposure, should_cancel);
         manifest_methods.push_back({
           {"type", "pvs"},
           {"params", {{"total_photons", cs.pvs_total_photons},
@@ -540,7 +558,8 @@ int main(int argc, char **argv) {
         scene.upload_beams(tracer.beams());
       }
 
-      if (cs.capture_mitsuba) {
+      // External process — can only be skipped before it starts, not interrupted.
+      if (cs.capture_mitsuba && !capture_cancelled) {
         std::snprintf(cs.current_method, sizeof(cs.current_method), "Mitsuba");
         run(python_cmd + " tools/export_mitsuba.py " + scenePath +
             " " + out_dir + "/camera.json" +
@@ -576,6 +595,19 @@ int main(int argc, char **argv) {
         std::ofstream mf(mpath);
         mf << manifest.dump(2) << "\n";
         std::cout << "Manifest: " << mpath << "\n";
+      }
+
+      if (capture_cancelled) {
+        std::cout << "[capture] cancelled (Esc); saved checkpoints kept\n";
+        // Wait for Esc release so processInput doesn't close the window.
+        while (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+          glfwWaitEventsTimeout(0.05);
+      }
+
+      captureActive = false;
+      if (pendingResize) {
+        pendingResize = false;
+        framebuffer_size_callback(window, pendingResizeW, pendingResizeH);
       }
 
       cs.current_method[0] = '\0';
@@ -937,6 +969,12 @@ void recreateSplatFbo(int width, int height) {
 }
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
+  if (captureActive) {
+    pendingResize  = true;
+    pendingResizeW = width;
+    pendingResizeH = height;
+    return;
+  }
   framebufferWidth = width;
   framebufferHeight = height;
   glViewport(0, 0, width, height);

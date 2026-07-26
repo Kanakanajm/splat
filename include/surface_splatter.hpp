@@ -29,13 +29,17 @@ public:
     // Like render(), but saves a snapshot at each pass index listed in `checkpoints`.
     // `checkpoints` values are 1-based cumulative pass counts (use generate_checkpoints).
     using CheckpointFn = std::function<void(int pass, const std::vector<float>&)>;
+    // should_cancel is polled once per pass; returning true stops the render
+    // (checkpoints already delivered remain valid).
+    using CancelFn = std::function<bool()>;
     void render_checkpointed(int width, int height,
                              const PinholeCamera& cam,
                              Shader& geom_shader, Shader& splat_shader, Shader& face_normal_shader,
                              unsigned int fbo,
                              const std::vector<int>& checkpoints,
                              const CheckpointFn& on_checkpoint,
-                             float h = 0.01f, float exposure = 1.0f);
+                             float h = 0.01f, float exposure = 1.0f,
+                             const CancelFn& should_cancel = {});
 
 private:
     Scene&              scene_;

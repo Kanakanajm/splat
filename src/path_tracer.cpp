@@ -376,7 +376,8 @@ void PathTracer::render(std::vector<float>& out, int width, int height,
 void PathTracer::render_checkpointed(int width, int height, const PinholeCamera& cam,
                                       const std::vector<int>& checkpoints,
                                       const CheckpointFn& on_checkpoint,
-                                      uint32_t start_medium) const {
+                                      uint32_t start_medium,
+                                      const CancelFn& should_cancel) const {
     if (checkpoints.empty()) return;
 
     const int    total = checkpoints.back();
@@ -386,6 +387,10 @@ void PathTracer::render_checkpointed(int width, int height, const PinholeCamera&
 
     int ci = 0;
     for (int s = 0; s < total; ++s) {
+        if (should_cancel && should_cancel()) {
+            std::cout << "\n[PT] cancelled at sample " << s << "\n";
+            return;
+        }
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
                 // Seed: high bits = pixel index, low 20 bits = sample index.

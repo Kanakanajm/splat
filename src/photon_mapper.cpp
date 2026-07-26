@@ -201,7 +201,8 @@ void PhotonMapper::render(std::vector<float>& out, int width, int height,
 void PhotonMapper::render_checkpointed(int width, int height, const PinholeCamera& cam,
                                        const std::vector<int>& checkpoints,
                                        const CheckpointFn& on_checkpoint,
-                                       uint32_t start_medium) {
+                                       uint32_t start_medium,
+                                       const CancelFn& should_cancel) {
     if (checkpoints.empty()) return;
 
     const int    total = checkpoints.back();
@@ -211,6 +212,10 @@ void PhotonMapper::render_checkpointed(int width, int height, const PinholeCamer
 
     int ci = 0;
     for (int s = 0; s < total; ++s) {
+        if (should_cancel && should_cancel()) {
+            std::cout << "\n[PM] cancelled at spp " << s << "\n";
+            return;
+        }
         Rng emit_rng{static_cast<uint64_t>(s) * 0x9E3779B97F4A7C15ULL};
         emit(emit_rng);
 

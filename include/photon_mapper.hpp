@@ -27,10 +27,14 @@ public:
 
     // Like render(), but saves a normalised snapshot at each SPP in checkpoints.
     using CheckpointFn = std::function<void(int spp, const std::vector<float>&)>;
+    // should_cancel is polled once per SPP; returning true stops the render
+    // (checkpoints already delivered remain valid).
+    using CancelFn = std::function<bool()>;
     void render_checkpointed(int width, int height, const PinholeCamera& cam,
                              const std::vector<int>& checkpoints,
                              const CheckpointFn& on_checkpoint,
-                             uint32_t start_medium = 0u);
+                             uint32_t start_medium = 0u,
+                             const CancelFn& should_cancel = {});
 
     std::size_t surf_photon_count() const { return surf_tree_.size(); }
     std::size_t vol_photon_count()  const { return vol_tree_.size();  }

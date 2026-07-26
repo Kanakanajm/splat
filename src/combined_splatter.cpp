@@ -321,7 +321,8 @@ void CombinedSplatter::render_checkpointed(int width, int height,
                                             unsigned int accum_fbo,
                                             const std::vector<int>& checkpoints,
                                             const CheckpointFn& on_checkpoint,
-                                            float h, float beam_radius, float exposure) {
+                                            float h, float beam_radius, float exposure,
+                                            const CancelFn& should_cancel) {
     if (checkpoints.empty()) return;
 
     const auto N_total    = static_cast<uint32_t>(n_photons_total_);
@@ -338,6 +339,10 @@ void CombinedSplatter::render_checkpointed(int width, int height,
 
     int ci = 0;
     for (int pass = 1; pass <= K; ++pass) {
+        if (should_cancel && should_cancel()) {
+            std::cout << "\n[PVS] cancelled at pass " << (pass - 1) << "\n";
+            break;
+        }
         Rng rng(static_cast<uint64_t>(pass - 1) * 0x9E3779B97F4A7C15ULL);
         tracer.trace(N_per_pass, static_cast<uint32_t>(max_emit_depth_), rng, N_total);
         scene_.upload_splats(tracer.points());

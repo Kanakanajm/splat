@@ -30,6 +30,9 @@ public:
                 float beam_radius = 0.05f, float exposure = 1.0f);
 
     using CheckpointFn = std::function<void(int pass, const std::vector<float>&)>;
+    // should_cancel is polled once per pass; returning true stops the render
+    // (checkpoints already delivered remain valid).
+    using CancelFn = std::function<bool()>;
     void render_checkpointed(int width, int height,
                              const PinholeCamera& cam,
                              Shader& depth_peel_init_shader,
@@ -39,7 +42,8 @@ public:
                              unsigned int accum_fbo,
                              const std::vector<int>& checkpoints,
                              const CheckpointFn& on_checkpoint,
-                             float beam_radius = 0.05f, float exposure = 1.0f);
+                             float beam_radius = 0.05f, float exposure = 1.0f,
+                             const CancelFn& should_cancel = {});
 
 private:
     Scene&              scene_;

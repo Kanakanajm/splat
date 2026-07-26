@@ -26,10 +26,14 @@ public:
     // with a normalised RGB buffer at each value in checkpoints (must be sorted,
     // positive, and non-empty — otherwise a no-op).
     using CheckpointFn = std::function<void(int spp, const std::vector<float>&)>;
+    // should_cancel is polled once per SPP; returning true stops the render
+    // (checkpoints already delivered remain valid).
+    using CancelFn = std::function<bool()>;
     void render_checkpointed(int width, int height, const PinholeCamera& cam,
                              const std::vector<int>& checkpoints,
                              const CheckpointFn& on_checkpoint,
-                             uint32_t start_medium = 0u) const;
+                             uint32_t start_medium = 0u,
+                             const CancelFn& should_cancel = {}) const;
 
 private:
     tinybvh::bvhvec3 Li(tinybvh::Ray ray, uint32_t medium_id, Rng& rng) const;

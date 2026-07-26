@@ -18,6 +18,9 @@ RayModel::RayModel(std::vector<tinybvh::bvhvec4> tris,
 
 RayModel::RayModel(const std::string& path) {
     Assimp::Importer importer;
+    // Smooth normals only across edges narrower than 89°: sphere facets get
+    // interpolated, but 90° box edges stay sharp (no cross-corner averaging).
+    importer.SetPropertyFloat(AI_CONFIG_PP_GSN_MAX_SMOOTHING_ANGLE, 89.0f);
     const aiScene* scene = importer.ReadFile(
         path,
         aiProcess_Triangulate | aiProcess_PreTransformVertices | aiProcess_GenSmoothNormals);
@@ -60,6 +63,17 @@ std::optional<uint32_t> RayModel::find_instance(const std::string& name) const {
         if (instance_names_[i] == name) return i;
     }
     return std::nullopt;
+}
+
+tinybvh::bvhvec3 RayModel::vertex_normal(uint32_t prim, uint32_t i) const {
+    if (vertex_normals_.empty()) {
+        const tinybvh::bvhvec3 v0{tris_[prim*3+0].x, tris_[prim*3+0].y, tris_[prim*3+0].z};
+        const tinybvh::bvhvec3 v1{tris_[prim*3+1].x, tris_[prim*3+1].y, tris_[prim*3+1].z};
+        const tinybvh::bvhvec3 v2{tris_[prim*3+2].x, tris_[prim*3+2].y, tris_[prim*3+2].z};
+        return tinybvh::tinybvh_normalize(tinybvh::tinybvh_cross(v1 - v0, v2 - v0));
+    }
+    const auto& n = vertex_normals_[prim * 3 + i];
+    return {n.x, n.y, n.z};
 }
 
 tinybvh::bvhvec3 RayModel::smooth_normal(uint32_t prim, float u, float v) const {

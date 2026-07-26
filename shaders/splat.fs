@@ -18,12 +18,18 @@ out vec4 FragColor;
 const float PI = 3.14159265358979;
 
 void main() {
-    if (useFaceNormalTest != 0) {
-        vec3 visibleNormal = texelFetch(faceNormalTex, ivec2(gl_FragCoord.xy), 0).rgb;
-        // Threshold allows ~8° deviation (cos 8° ≈ 0.99) for imperfect planar quads,
-        // while still rejecting splats that bleed onto perpendicular surfaces (dot ≈ 0).
-        if (abs(dot(visibleNormal, vNormal)) < 0.999) discard;
-    }
+    // if (useFaceNormalTest != 0) {
+    //     vec3 visibleNormal = texelFetch(faceNormalTex, ivec2(gl_FragCoord.xy), 0).rgb;
+    //     // Both normals are flat face normals: same face gives dot = ±1 exactly.
+    //     // Threshold of 0.1 (cos 84°) allows splats to cross adjacent faces on curved
+    //     // surfaces (sphere edges are typically <30° apart) while still rejecting
+    //     // perpendicular cross-surface bleeding (box wall/floor, dot = 0).
+    //     if (abs(dot(visibleNormal, vNormal)) < 0.1) discard;
+    // }
+
+    // vec3 visibleNormal = texelFetch(faceNormalTex, ivec2(gl_FragCoord.xy), 0).rgb;
+    // if (abs(dot(visibleNormal, vNormal)) < 0.9) discard;
+
 
     if (aov_mode == 1) {
         // Wireframe: flat yellow-white so lines are visible on dark background.

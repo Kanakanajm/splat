@@ -99,15 +99,23 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
                 beams_.push_back({ray.O, p, m, depth, weight / n});
 
             const tinybvh::bvhvec3 normal = scene_.model().smooth_normal(prim, ray.hit.u, ray.hit.v);
-            // Orient toward incident side so dot(incoming_dir, oriented_n) < 0.
-            const float orient = (normal.x*ray.D.x + normal.y*ray.D.y + normal.z*ray.D.z) < 0.0f
-                                     ? 1.0f : -1.0f;
-            const tinybvh::bvhvec3 oriented_n{normal.x*orient, normal.y*orient, normal.z*orient};
 
             const uint32_t bsdf_id = scene_.bsdf_id_at(prim);
             const Bsdf&    bsdf    = scene_.bsdf(bsdf_id);
             if (bsdf.kind == BsdfKind::Diffuse) {
-                points_.push_back({p, oriented_n, ray.D,
+                // Store the flat (geometric) face normal for the GPU normal guard test.
+                // The guard compares against faceNormalTex which also stores flat normals;
+                // smooth normals would diverge across the disk and cause false discards.
+                const auto& tris = scene_.model().triangles();
+                const tinybvh::bvhvec3 fv0{tris[prim*3+0].x, tris[prim*3+0].y, tris[prim*3+0].z};
+                const tinybvh::bvhvec3 fv1{tris[prim*3+1].x, tris[prim*3+1].y, tris[prim*3+1].z};
+                const tinybvh::bvhvec3 fv2{tris[prim*3+2].x, tris[prim*3+2].y, tris[prim*3+2].z};
+                const tinybvh::bvhvec3 flat_n = tinybvh::tinybvh_normalize(
+                    tinybvh::tinybvh_cross(fv1 - fv0, fv2 - fv0));
+                const float f_orient = (flat_n.x*ray.D.x + flat_n.y*ray.D.y + flat_n.z*ray.D.z) < 0.0f
+                                           ? 1.0f : -1.0f;
+                const tinybvh::bvhvec3 guard_n{flat_n.x*f_orient, flat_n.y*f_orient, flat_n.z*f_orient};
+                points_.push_back({p, guard_n, ray.D,
                                    bsdf_id, scene_.model().instance_id(prim), depth, weight/n});
             }
 
