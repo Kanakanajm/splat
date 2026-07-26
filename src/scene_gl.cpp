@@ -62,17 +62,26 @@ void Scene::upload_geometry() {
     for (uint32_t i = 0; i < n_inst; ++i)
         inst_data[i].reserve(tri_per_inst[i] * 18u);  // 3 verts * 6 floats
 
+    const bool has_smooth = model_.has_vertex_normals();
     for (uint32_t t = 0; t < tri_count; ++t) {
         const tinybvh::bvhvec3 v0 = {tris[3*t+0].x, tris[3*t+0].y, tris[3*t+0].z};
         const tinybvh::bvhvec3 v1 = {tris[3*t+1].x, tris[3*t+1].y, tris[3*t+1].z};
         const tinybvh::bvhvec3 v2 = {tris[3*t+2].x, tris[3*t+2].y, tris[3*t+2].z};
-        const tinybvh::bvhvec3 e0 = {v1.x-v0.x, v1.y-v0.y, v1.z-v0.z};
-        const tinybvh::bvhvec3 e1 = {v2.x-v0.x, v2.y-v0.y, v2.z-v0.z};
-        const tinybvh::bvhvec3 n  = normalize3(cross3(e0, e1));
+
+        tinybvh::bvhvec3 n0, n1, n2;
+        if (has_smooth) {
+            n0 = model_.vertex_normal(t, 0);
+            n1 = model_.vertex_normal(t, 1);
+            n2 = model_.vertex_normal(t, 2);
+        } else {
+            const tinybvh::bvhvec3 e0 = {v1.x-v0.x, v1.y-v0.y, v1.z-v0.z};
+            const tinybvh::bvhvec3 e1 = {v2.x-v0.x, v2.y-v0.y, v2.z-v0.z};
+            n0 = n1 = n2 = normalize3(cross3(e0, e1));
+        }
 
         const uint32_t iid = model_.instance_id(t);
         auto& d = inst_data[iid];
-        for (const auto& v : {v0, v1, v2}) {
+        for (const auto& [v, n] : {std::pair{v0, n0}, {v1, n1}, {v2, n2}}) {
             d.push_back(v.x); d.push_back(v.y); d.push_back(v.z);
             d.push_back(n.x); d.push_back(n.y); d.push_back(n.z);
         }
@@ -351,7 +360,7 @@ unsigned int upload_kernel_tex() {
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, kSize, kSize, 0, GL_RED, GL_FLOAT, data.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
