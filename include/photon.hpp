@@ -8,6 +8,7 @@ struct PhotonPoint {
     tinybvh::bvhvec3 position;
     tinybvh::bvhvec3 normal;        // geometric normal at hit, oriented toward photon origin
     tinybvh::bvhvec3 incoming_dir;  // normalized photon travel direction before hit
+    tinybvh::bvhvec3 smooth_normal; // interpolated shading normal at hit (Veach correction)
     uint32_t         bsdf_id;
     uint32_t         instance_id;   // owning instance, for visualization/coloring
     uint32_t         bounce_depth;  // which bounce produced this point (0 = first)

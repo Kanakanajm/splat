@@ -115,7 +115,7 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
                 const float f_orient = (flat_n.x*ray.D.x + flat_n.y*ray.D.y + flat_n.z*ray.D.z) < 0.0f
                                            ? 1.0f : -1.0f;
                 const tinybvh::bvhvec3 guard_n{flat_n.x*f_orient, flat_n.y*f_orient, flat_n.z*f_orient};
-                points_.push_back({p, guard_n, ray.D,
+                points_.push_back({p, guard_n, ray.D, normal,
                                    bsdf_id, scene_.model().instance_id(prim), depth, weight/n});
             }
 

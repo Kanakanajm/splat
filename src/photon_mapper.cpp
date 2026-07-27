@@ -8,6 +8,7 @@
 #include "ray_model.hpp"
 #include "sampling.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -132,14 +133,28 @@ tinybvh::bvhvec3 PhotonMapper::gather(tinybvh::Ray ray, uint32_t medium_id,
             // L.y += weight.y * ld.y;
             // L.z += weight.z * ld.z;
 
-            // Indirect via photon map: (albedo/π) · k_surf · Σ φ_j
+            // Indirect via photon map: (albedo/π) · k_surf · Σ w_sn · φ_j
             const auto nearby = surf_tree_.radius_search(p, r_surf_);
             if (!nearby.empty()) {
+                // Veach shading-normal correction, arrival half: photon density
+                // per area carries the geometric cosine of the landing face;
+                // the reflection model wants the shading cosine at the gather
+                // point. The ratio cap bounds grazing-photon amplification
+                // (fireflies on dark faces); legitimate corrections stay near 1.
+                constexpr float kMaxSn = 5.0f;
+                const tinybvh::bvhvec3 ns =
+                    scene_.model().smooth_normal(prim, ray.hit.u, ray.hit.v);
                 tinybvh::bvhvec3 sum{};
                 for (const auto* ph : nearby) {
-                    sum.x += ph->power.x;
-                    sum.y += ph->power.y;
-                    sum.z += ph->power.z;
+                    const auto& d  = ph->incoming_dir;
+                    const float cos_s = std::max(0.f,
+                        -(ns.x*d.x + ns.y*d.y + ns.z*d.z));
+                    const float cos_g = std::max(1e-3f,
+                        -(ph->normal.x*d.x + ph->normal.y*d.y + ph->normal.z*d.z));
+                    const float w_sn = std::min(cos_s / cos_g, kMaxSn);
+                    sum.x += w_sn * ph->power.x;
+                    sum.y += w_sn * ph->power.y;
+                    sum.z += w_sn * ph->power.z;
                 }
                 const float k_surf = 1.f / (kPi * r_surf_ * r_surf_);
                 L.x += weight.x * (bsdf.color.x / kPi) * k_surf * sum.x;

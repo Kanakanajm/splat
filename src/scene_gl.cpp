@@ -9,6 +9,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -380,10 +381,22 @@ void Scene::upload_splats(const std::vector<PhotonPoint>& points) {
         const uint32_t iid = (p.instance_id < n_inst) ? p.instance_id : 0u;
         auto& d = inst_data[iid];
         const auto& col = bsdf_table_[p.bsdf_id < bsdf_table_.size() ? p.bsdf_id : 0].color;
+        // Veach shading-normal correction, arrival half (same as PM gather):
+        // photon density carries the flat-face cosine; the shading model wants
+        // the smooth-normal cosine. Evaluated at the photon's own position
+        // (deposit-point approximation, error O(r·curvature)) and premultiplied
+        // into the splat power so the shaders stay unchanged.
+        constexpr float kMaxSn = 5.0f;
+        const auto& din  = p.incoming_dir;
+        const float cos_s = std::max(0.0f,
+            -(p.smooth_normal.x*din.x + p.smooth_normal.y*din.y + p.smooth_normal.z*din.z));
+        const float cos_g = std::max(1e-3f,
+            -(p.normal.x*din.x + p.normal.y*din.y + p.normal.z*din.z));
+        const float w_sn = std::min(cos_s / cos_g, kMaxSn);
         d.push_back(p.position.x);     d.push_back(p.position.y);     d.push_back(p.position.z);
         d.push_back(p.normal.x);       d.push_back(p.normal.y);       d.push_back(p.normal.z);
         d.push_back(p.incoming_dir.x); d.push_back(p.incoming_dir.y); d.push_back(p.incoming_dir.z);
-        d.push_back(p.power.x);        d.push_back(p.power.y);        d.push_back(p.power.z);
+        d.push_back(p.power.x * w_sn); d.push_back(p.power.y * w_sn); d.push_back(p.power.z * w_sn);
         d.push_back(col.x);            d.push_back(col.y);            d.push_back(col.z);
     }
 
