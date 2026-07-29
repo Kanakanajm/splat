@@ -5,13 +5,15 @@ layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec3 aIncomingDir;  // reserved for glossy BRDF
 layout(location = 3) in vec3 aPower;
 layout(location = 4) in vec3 aBsdfColor;
+layout(location = 5) in float aInstanceId;
 
 uniform mat4 model;
 
-out vec3 vsNormal;
-out vec3 vsIncomingDir;
-out vec3 vsPower;
-out vec3 vsBsdfColor;
+out vec3  vsNormal;
+out vec3  vsIncomingDir;
+out vec3  vsPower;
+out vec3  vsBsdfColor;
+out float vsInstanceId;
 
 void main() {
     // Pass world-space position to GS; view*projection applied per emitted vertex.
@@ -20,4 +22,5 @@ void main() {
     vsIncomingDir = mat3(model) * aIncomingDir;
     vsPower       = aPower;
     vsBsdfColor   = aBsdfColor;
+    vsInstanceId  = aInstanceId;
 }

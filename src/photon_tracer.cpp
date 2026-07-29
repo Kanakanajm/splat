@@ -103,9 +103,9 @@ void PhotonTracer::trace(uint32_t photon_count, uint32_t max_depth, Rng& rng,
             const uint32_t bsdf_id = scene_.bsdf_id_at(prim);
             const Bsdf&    bsdf    = scene_.bsdf(bsdf_id);
             if (bsdf.kind == BsdfKind::Diffuse) {
-                // Store the flat (geometric) face normal for the GPU normal guard test.
-                // The guard compares against faceNormalTex which also stores flat normals;
-                // smooth normals would diverge across the disk and cause false discards.
+                // Store the flat (geometric) face normal: the splat triangle is built
+                // in the plane of the hit face, so its orientation must be the flat
+                // normal (smooth normals would tilt the disk off the surface).
                 const auto& tris = scene_.model().triangles();
                 const tinybvh::bvhvec3 fv0{tris[prim*3+0].x, tris[prim*3+0].y, tris[prim*3+0].z};
                 const tinybvh::bvhvec3 fv1{tris[prim*3+1].x, tris[prim*3+1].y, tris[prim*3+1].z};

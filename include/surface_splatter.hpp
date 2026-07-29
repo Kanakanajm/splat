@@ -22,7 +22,7 @@ public:
     // `geom_shader` is used for a depth pre-pass so opaque geometry occludes splats behind it.
     void render(std::vector<float>& out, int width, int height,
                 const PinholeCamera& cam,
-                Shader& geom_shader, Shader& splat_shader, Shader& face_normal_shader,
+                Shader& geom_shader, Shader& splat_shader, Shader& surface_id_shader,
                 unsigned int fbo,
                 float h = 0.01f, float exposure = 1.0f);
 
@@ -34,7 +34,7 @@ public:
     using CancelFn = std::function<bool()>;
     void render_checkpointed(int width, int height,
                              const PinholeCamera& cam,
-                             Shader& geom_shader, Shader& splat_shader, Shader& face_normal_shader,
+                             Shader& geom_shader, Shader& splat_shader, Shader& surface_id_shader,
                              unsigned int fbo,
                              const std::vector<int>& checkpoints,
                              const CheckpointFn& on_checkpoint,

@@ -3,10 +3,11 @@
 layout(points) in;
 layout(triangle_strip, max_vertices = 3) out;
 
-in vec3 vsNormal[];
-in vec3 vsIncomingDir[];
-in vec3 vsPower[];
-in vec3 vsBsdfColor[];
+in vec3  vsNormal[];
+in vec3  vsIncomingDir[];
+in vec3  vsPower[];
+in vec3  vsBsdfColor[];
+in float vsInstanceId[];
 
 uniform mat4  view;
 uniform mat4  projection;
@@ -17,6 +18,7 @@ out vec3  vPower;
 out vec3  vBsdfColor;
 out float vCosTheta;
 out vec3  vNormal;
+flat out uint vInstanceId;
 
 void main() {
     vec3 worldPos = gl_in[0].gl_Position.xyz;
@@ -52,10 +54,11 @@ void main() {
         gl_Position = VP * vec4(p, 1.0);
         // UV: center of kernel → (0.5, 0.5); scale = 1/(2h).
         vUV        = vec2(0.5) + ofs[i] / (2.0 * h);
-        vPower     = vsPower[0];
-        vBsdfColor = vsBsdfColor[0];
-        vCosTheta  = cosTheta;
-        vNormal    = n;
+        vPower      = vsPower[0];
+        vBsdfColor  = vsBsdfColor[0];
+        vCosTheta   = cosTheta;
+        vNormal     = n;
+        vInstanceId = uint(vsInstanceId[0] + 0.5);
         EmitVertex();
     }
     EndPrimitive();

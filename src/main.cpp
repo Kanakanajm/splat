@@ -213,7 +213,7 @@ int main(int argc, char **argv) {
 
   Shader pointShader        ("shaders/point.vs",          "shaders/point.fs");
   Shader splatShader        ("shaders/splat.vs", "shaders/splat.gs", "shaders/splat.fs");
-  Shader faceNormalShader       ("shaders/face_normal.vs",        "shaders/face_normal.fs");
+  Shader surfaceIdShader       ("shaders/surface_id.vs",         "shaders/surface_id.fs");
   Shader beamShader         ("shaders/beam.vs", "shaders/beam.gs", "shaders/beam.fs");
   Shader volSplatShader     ("shaders/beam.vs", "shaders/beam.gs", "shaders/vol_splat.fs");
   Shader geomShader         ("shaders/geom.vs",           "shaders/geom.fs");
@@ -458,7 +458,7 @@ int main(int argc, char **argv) {
         const auto ss_checkpoints = generate_checkpoints(K_ss, n_ss_cp);
         std::vector<std::string> ss_files;
         ss.render_checkpointed(W, H, capture_cam,
-          geomShader, splatShader, faceNormalShader, accumFbo,
+          geomShader, splatShader, surfaceIdShader, accumFbo,
           ss_checkpoints,
           [&](int pass, const std::vector<float>& buf) {
             char fname[512];
@@ -528,7 +528,7 @@ int main(int argc, char **argv) {
         std::vector<std::string> pvs_files;
         pvs.render_checkpointed(W, H, capture_cam,
           geomShader, depthPeelInitShader, depthPeelShader,
-          quadShader, splatShader, volSplatShader, faceNormalShader, accumFbo,
+          quadShader, splatShader, volSplatShader, surfaceIdShader, accumFbo,
           pvs_checkpoints,
           [&](int pass, const std::vector<float>& buf) {
             char fname[512];
@@ -742,7 +742,7 @@ int main(int argc, char **argv) {
     if (vs.showPoints) {
       const int bounceFilter = vs.allBounces ? -1 : vs.bounceFilter;
       if (vs.showSplatTriangle) {
-        scene.render_face_normal(faceNormalShader, view, projection, framebufferWidth, framebufferHeight);
+        scene.render_surface_id(surfaceIdShader, view, projection, framebufferWidth, framebufferHeight);
         // Depth prepass when geometry is hidden so splat triangles are occluded correctly.
         if (!vs.showGeometry) {
           glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);

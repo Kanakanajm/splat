@@ -339,8 +339,8 @@ void upload_splats_vbo(unsigned int& vao, unsigned int& vbo, const std::vector<f
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(data.size() * sizeof(float)),
                  data.data(), GL_STATIC_DRAW);
-    // Layout: [pos:3, normal:3, incoming_dir:3, power:3, bsdf_color:3] = 15 floats
-    constexpr GLsizei stride = 15 * sizeof(float);
+    // Layout: [pos:3, normal:3, incoming_dir:3, power:3, bsdf_color:3, instance_id:1] = 16 floats
+    constexpr GLsizei stride = 16 * sizeof(float);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
     glEnableVertexAttribArray(1);
@@ -351,6 +351,8 @@ void upload_splats_vbo(unsigned int& vao, unsigned int& vbo, const std::vector<f
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, (void*)(9  * sizeof(float)));
     glEnableVertexAttribArray(4);
     glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, stride, (void*)(12 * sizeof(float)));
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, stride, (void*)(15 * sizeof(float)));
     glBindVertexArray(0);
 }
 
@@ -398,14 +400,15 @@ void Scene::upload_splats(const std::vector<PhotonPoint>& points) {
         d.push_back(p.incoming_dir.x); d.push_back(p.incoming_dir.y); d.push_back(p.incoming_dir.z);
         d.push_back(p.power.x * w_sn); d.push_back(p.power.y * w_sn); d.push_back(p.power.z * w_sn);
         d.push_back(col.x);            d.push_back(col.y);            d.push_back(col.z);
+        d.push_back(static_cast<float>(iid));
     }
 
     std::vector<float> flat;
-    flat.reserve(points.size() * 15);
+    flat.reserve(points.size() * 16);
     splat_ranges_.resize(n_inst);
     uint32_t cursor = 0;
     for (uint32_t i = 0; i < n_inst; ++i) {
-        const uint32_t count = static_cast<uint32_t>(inst_data[i].size() / 15);
+        const uint32_t count = static_cast<uint32_t>(inst_data[i].size() / 16);
         splat_ranges_[i] = {cursor, count};
         flat.insert(flat.end(), inst_data[i].begin(), inst_data[i].end());
         cursor += count;
@@ -416,40 +419,41 @@ void Scene::upload_splats(const std::vector<PhotonPoint>& points) {
         splat_kernel_tex_ = upload_kernel_tex();
 }
 
-void Scene::render_face_normal(Shader& shader, const glm::mat4& view, const glm::mat4& proj, int w, int h) {
+void Scene::render_surface_id(Shader& shader, const glm::mat4& view, const glm::mat4& proj, int w, int h) {
     if (geom_vao_ == 0 || geom_ranges_.empty()) return;
 
-    // Create / resize RGB16F face-normal texture + FBO.
-    if (face_normal_tex_ == 0 || face_normal_w_ != w || face_normal_h_ != h) {
-        if (face_normal_tex_ == 0)      glGenTextures(1, &face_normal_tex_);
-        if (face_normal_depth_rb_ == 0) glGenRenderbuffers(1, &face_normal_depth_rb_);
-        if (face_normal_fbo_ == 0)      glGenFramebuffers(1, &face_normal_fbo_);
+    // Create / resize R32UI surface-id texture + FBO.
+    if (surface_id_tex_ == 0 || surface_id_w_ != w || surface_id_h_ != h) {
+        if (surface_id_tex_ == 0)      glGenTextures(1, &surface_id_tex_);
+        if (surface_id_depth_rb_ == 0) glGenRenderbuffers(1, &surface_id_depth_rb_);
+        if (surface_id_fbo_ == 0)      glGenFramebuffers(1, &surface_id_fbo_);
 
-        glBindTexture(GL_TEXTURE_2D, face_normal_tex_);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGB, GL_FLOAT, nullptr);
+        glBindTexture(GL_TEXTURE_2D, surface_id_tex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, w, h, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glBindTexture(GL_TEXTURE_2D, 0);
 
-        glBindRenderbuffer(GL_RENDERBUFFER, face_normal_depth_rb_);
+        glBindRenderbuffer(GL_RENDERBUFFER, surface_id_depth_rb_);
         glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
         glBindRenderbuffer(GL_RENDERBUFFER, 0);
 
-        glBindFramebuffer(GL_FRAMEBUFFER, face_normal_fbo_);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, face_normal_tex_, 0);
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, face_normal_depth_rb_);
+        glBindFramebuffer(GL_FRAMEBUFFER, surface_id_fbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, surface_id_tex_, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, surface_id_depth_rb_);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        face_normal_w_ = w;
-        face_normal_h_ = h;
+        surface_id_w_ = w;
+        surface_id_h_ = h;
     }
 
     GLint prev_fbo;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fbo);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, face_normal_fbo_);
-    const GLfloat clearNormal[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    glClearBufferfv(GL_COLOR, 0, clearNormal);
+    glBindFramebuffer(GL_FRAMEBUFFER, surface_id_fbo_);
+    // Background sentinel: never matches a photon's instance id.
+    const GLuint clearId[4] = {0xFFFFFFFFu, 0u, 0u, 0u};
+    glClearBufferuiv(GL_COLOR, 0, clearId);
     glClear(GL_DEPTH_BUFFER_BIT);
 
     glEnable(GL_DEPTH_TEST);
@@ -467,6 +471,7 @@ void Scene::render_face_normal(Shader& shader, const glm::mat4& view, const glm:
         // Skip media shells — photons don't land on them.
         if (i < instance_medium_in_.size() && instance_medium_in_[i] != 0u)
             continue;
+        shader.setInt("instanceId", static_cast<int>(i));
         const auto& r = geom_ranges_[i];
         glDrawArrays(GL_TRIANGLES, static_cast<GLint>(r.start), static_cast<GLsizei>(r.count));
     }
@@ -502,12 +507,12 @@ void Scene::draw_splats(Shader& splat_shader, float h, float exposure, int aov_m
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, splat_kernel_tex_);
 
-    const bool hasFaceNormal = (face_normal_tex_ != 0);
-    splat_shader.setInt("useFaceNormalTest", hasFaceNormal ? 1 : 0);
-    if (hasFaceNormal) {
-        splat_shader.setInt("faceNormalTex", 1);
+    const bool hasSurfaceId = (surface_id_tex_ != 0);
+    splat_shader.setInt("useSurfaceIdTest", hasSurfaceId ? 1 : 0);
+    if (hasSurfaceId) {
+        splat_shader.setInt("surfaceIdTex", 1);
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, face_normal_tex_);
+        glBindTexture(GL_TEXTURE_2D, surface_id_tex_);
         glActiveTexture(GL_TEXTURE0);
     }
 
