@@ -1,0 +1,13 @@
+{
+  "lights": [
+    { "kind": "area", "instance": "light", "emission": [5.0, 5.0, 5.0] }
+  ], 
+  "mediums": {
+  },
+  "bsdfs": {
+    "grey-diffuse": { "kind": "Diffuse", "color": [0.8, 0.8, 0.8] }
+  },
+  "instances": {
+    "p1": { "bsdf": "grey-diffuse", "medium_in": "vacuum", "medium_out": "vacuum" }
+  }
+}
