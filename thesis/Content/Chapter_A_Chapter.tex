@@ -1,0 +1,27 @@
+\chapter{A Chapter}
+\section{A section}
+
+This is the first chapter of this thesis' main part. Page numbering switches over from roman to arabic. 
+
+\minisec{Citations}
+Citations can be done like this: \cite{Amann2008AnalysisII}. The prefered citation style may be set in \texttt{Options.tex}.
+
+\minisec{Quotes}
+Quotes can be typeset as follows: \enquote{This is a quote}. They will be automatically typeset according to the chosen language.
+
+\minisec{Enumerations}
+\begin{enumerate}[wide]
+	\item For enumerations that need not be particularly exposed (e.g. in an assertion type statement as inside a lemma, a proposition, a theorem or a corollary or in a definition), the option \enquote{wide} as set for
+	this enumeration is preferable. It allows for better utilisation of the type are.
+	\item For enumerations as listed above, the option \enquote{wide} is probably not best suited.
+\end{enumerate}
+
+\minisec{Special environments and references}
+Special environments can be typeset as follows:
+
+% Aside of Theorem you can also use Proof, Lemma, Definition, Example, Corollary, Proposition, Construction, equation, IEEEeqnarray, Remark, Reminder.
+\begin{Theorem}[Heine-Borel]
+\label{thm:heine_borel}
+	A subset $A\subseteq \mathds{R}^n$ is compact if and only if it is closed and bounded. 
+\end{Theorem}
+You can reference them as follows: \cref{thm:heine_borel}. If you just want the number and not the type of the referenced object, you can also use \ref{thm:heine_borel}.

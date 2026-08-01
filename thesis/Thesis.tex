@@ -1,0 +1,55 @@
+\documentclass[english]{saartex} % Pick between "german" and "english"
+% You can adjust some options in the Options.tex file
+\input{Options.tex}
+\addbibresource{Literature.bib}
+
+% mandatory elements
+\title{Photon Beam Splatting for Participating Media}
+\author{Honglu Ma}
+\subject{Master Thesis} % or, in german, "Abschlussarbeit"
+\place{Saarbrücken}
+% all of these following elements can be empty
+\advisor{Ömercan Yazici}
+\professor{Prof. Dr.-Ing. Philipp Slusallek}
+\date{\today}
+
+\begin{document}
+\maketitle
+\frontmatter % Sets pagenumbering to be roman for pages exclusive of main content of thesis
+\tableofcontents
+% You can just delete the language version that you don't need and keep the other
+\ifgerman{
+	\include{Content/Eidesstattliche_Erklaerung.tex}%
+}
+\ifenglish{
+	\include{Content/Sworn_Declaration.tex}%
+}
+
+% If you need any additional content (such as acknowledgements etc.) that goes before the main content, you can place it here
+
+\cleardoublepage
+\mainmatter % Starts regular arabic page numbering
+
+% Using \include for chapters etc. potentially cuts down on compilation time
+% You are encouraged to write each chapter in a separate file, and just use them here like this:
+%
+% \include{Content/Chapter1.tex}
+% \include{Content/Chapter2.tex}
+% \include{Content/Chapter3.tex}
+
+\ifgerman{
+	\include{Content/Kapitel_Ein_Kapitel.tex}
+}
+\ifenglish{
+	\include{Content/Chapter_A_Chapter.tex}
+}
+
+\cleardoublepage
+\printbibliography[heading=bibintoc]
+
+\clearpage
+\appendix
+\include{Content/Appendix.tex}
+% further appendix items (such as a glossary etc., if you have them) go here
+
+\end{document}

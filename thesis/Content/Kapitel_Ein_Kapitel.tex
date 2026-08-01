@@ -1,0 +1,29 @@
+\chapter{Ein Kapitel}
+\section{Ein Abschnitt}
+
+Hier beginnt der Hauptteil der Arbeit, \dh die Seitennummerierung wechselt von römisch auf arabisch. 
+
+\minisec{Zitieren}
+Zitieren funktioniert zum Beispiel so: \cite{Amann2008AnalysisII}. Der gewünschte Zitationsstil kann in \texttt{Options.tex}
+konfiguriert werden. 
+
+\minisec{Anführungszeichen}
+Anführungszeichen können wie folgt gesetzt werden: \enquote{Anführungszeichen}. Sie werden automatisch entsprechend der gewählten Sprache richtig gesetzt.
+
+\minisec{Aufzählungen}
+\begin{enumerate}[wide]
+	\item Für Aufzählungen, die nicht besonders abgesetzt werden wollen (beispielsweise in einer Aussage, wie einem Lemma, einer Proposition, einem Satz oder einem Korollar oder in einer Definition), bietet sich die Option
+	\enquote{wide} an, wie hier eingestellt. So wird der verfügbare Platz auf der Seite besser ausgenutzt.
+	\item Für Aufzählungen, die besser abgesetzt würden, nicht die Option \enquote{wide} verwenden.
+\end{enumerate}
+
+\minisec{Besondere Umgebungen und Referenzen}
+Besonders abgesetzte Umgebungen können wie folgt gesetzt werden:
+
+% Neben Theorem kann man auch Proof, Lemma, Definition, Example, Corollary, Proposition, Construction, equation, IEEEeqnarray, Remark, Reminder verwenden.
+\begin{Theorem}[Heine-Borel]
+\label{thm:heine_borel}
+	Eine Menge $A\subseteq \mathds{R}^n$ ist kompakt genau dann, wenn sie abgeschlossen und beschränkt ist.
+\end{Theorem}
+Man kann diese dann wie folgt referenzieren: \cref{thm:heine_borel}. Wenn man nur die Nummer und nicht den Typ des referenzierten Objektes ausgeben will, kann man auch \ref{thm:heine_borel} verwenden.
+
