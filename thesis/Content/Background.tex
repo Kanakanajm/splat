@@ -1,0 +1,41 @@
+\chapter{Background}
+\label{chap:background}
+
+% Self-contained theory chapter ("self-study" material). Sections follow the
+% light: each concept is introduced when the previous one creates the need
+% for it. Populate each section below; reorder/add as you see fit.
+
+\section{Radiometry}
+\label{sec:bg_radiometry}
+% On-ramp: flux, irradiance, radiance, solid angle. The quantities all later
+% equations are written in.
+
+\section{The Rendering Equation and Global Illumination}
+\label{sec:bg_rendering_equation}
+% Surface light transport: BRDF, the rendering equation, why solving it
+% globally is hard. Reflection and refraction (Fresnel, Snell) as the BSDF
+% cases that later give rise to caustics.
+
+\section{Light Transport in Participating Media}
+\label{sec:bg_media}
+% Extend to volumes: absorption, out-/in-scattering, emission; extinction
+% and albedo; phase functions (isotropic, Henyey-Greenstein); transmittance
+% and the volume rendering equation (RTE).
+
+\section{Monte Carlo Integration}
+\label{sec:bg_monte_carlo}
+% Estimators, variance, importance sampling; distance/free-flight sampling
+% for media; path tracing as the canonical unbiased solver and why it is
+% slow for media.
+
+\section{Density Estimation and Photon Mapping}
+\label{sec:bg_density_estimation}
+% The bridge from MC to our method: two-pass light transport, photon maps,
+% kernel density estimation, radiance estimate on surfaces and in media;
+% bias/consistency trade-off. Historical variants stay in Related Work.
+
+\section{Ray Tracing and Rasterization}
+\label{sec:bg_raster_vs_rt}
+% The two computational paradigms we hybridize: visibility by ray casting
+% vs. by projection/scan conversion; the GPU pipeline, billboards/splatting,
+% blending -- what rasterization gives us for free and what it cannot do.
