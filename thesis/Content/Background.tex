@@ -5,23 +5,105 @@
 % light: each concept is introduced when the previous one creates the need
 % for it. Populate each section below; reorder/add as you see fit.
 
+To simulate a physical phenomenon --- in our case, light --- on a computer, one must first model it mathematically. This chapter assembles that model piece by piece. We begin with radiometry, the vocabulary in which light is measured, then state the rendering equation that lies behind every physically based renderer and extend it to participating media. Since these equations admit no closed-form solution for realistic scenes, we introduce Monte Carlo integration, the standard machinery for estimating them, together with the sampling techniques specific to media. We close with the two computational paradigms of computer graphics, ray tracing and rasterization, and how they are employed differently; our method, presented in \cref{chap:method}, is a hybrid of both.
+
 \section{Radiometry}
 \label{sec:bg_radiometry}
 % On-ramp: flux, irradiance, radiance, solid angle. The quantities all later
 % equations are written in.
+The colors we see are the result of stimulated photoreceptors on the retina. The receptors known as \emph{cones} (responsible for vision in the higher intensity range, in contrast to the \emph{rods}) respond differently to light of different wavelengths. Light emitted from a source bounces off the surrounding surfaces; along the way, some wavelengths are absorbed more strongly than others, and the light that finally lands on the receptors is processed by the brain into a sensation of color, its intensity into one of brightness. To simulate vision faithfully, a renderer must therefore keep track of how much light energy arrives at a sensor, from which directions, and at which wavelengths, after all the scattering and absorption in the scene. Radiometry provides the quantities for this bookkeeping; we introduce them from the coarsest to the finest, following the treatment in \cite{pharr23pbrt}.
+
+Light carries energy, measured in Joules ($\mathrm{J}$). \emph{Radiant flux} (or \emph{power}), denoted by the capital Greek letter $\Phi$, is the amount of energy emitted, transported, or received per unit time,
+\begin{equation}
+	\Phi = \frac{\mathrm{d}Q}{\mathrm{d}t},
+\end{equation}
+measured in Watts ($\mathrm{W} = \mathrm{J/s}$). Flux describes a light source or a receiving surface \emph{as a whole}, e.g.\ the total power emitted by a light bulb, with no notion of where on the surface or from which direction the energy flows.
+
+Refining flux over area gives \emph{irradiance}: the flux received per unit surface area,
+\begin{equation}
+	E(\mathbf{x}) = \frac{\mathrm{d}\Phi}{\mathrm{d}A(\mathbf{x})},
+\end{equation}
+measured in $\mathrm{W/m^2}$. The same quantity measured for light \emph{leaving} a surface is called \emph{radiant exitance}.
+
+Before refining over direction as well, we need a way to measure sets of directions. A direction can be identified with a point on the unit sphere, and a set of directions with a region on it; the \emph{solid angle} of the set is the area of that region, measured in steradians ($\mathrm{sr}$). It is the three-dimensional analogue of an angle in the plane, which measures a set of directions by the area it covers on the unit sphere: the full sphere subtends a solid angle of $4\pi$, a hemisphere $2\pi$. A differential solid angle $\mathrm{d}\omega$ then stands for a single direction $\omega$ together with its infinitesimal neighborhood.
+
+The quantity most relevant to rendering is \emph{radiance}: the flux arriving at (or leaving) a point of a surface, per unit projected area, per unit solid angle,
+\begin{equation}
+	L(\mathbf{x}, \omega) = \frac{\mathrm{d}^2\Phi}{\mathrm{d}\omega \, \mathrm{d}A^{\perp}(\mathbf{x})} = \frac{\mathrm{d}^2\Phi}{\mathrm{d}\omega \, \mathrm{d}A(\mathbf{x}) \cos\theta},
+\end{equation}
+measured in $\mathrm{W/m^2/sr}$. Here $\mathrm{d}A^{\perp} = \mathrm{d}A\cos\theta$ is the surface area projected perpendicular to $\omega$, with $\theta$ the angle between $\omega$ and the surface normal: a surface viewed at a grazing angle intercepts less light per unit of its own area, and the projection makes radiance a property of the light ray itself rather than of the receiving surface. Indeed, radiance remains constant along a ray in empty space --- a property we will lose, deliberately, once we enter participating media in \cref{sec:bg_media}. Radiance is exactly what a pinhole camera measures: the light energy arriving at a specific position on the film from the single direction passing through the pinhole (at a certain time, assuming we render a static image rather than a video). Conversely, integrating radiance over the hemisphere of incoming directions recovers irradiance, $E(\mathbf{x}) = \int L(\mathbf{x}, \omega)\cos\theta \,\mathrm{d}\omega$.
+
+All these quantities are, strictly speaking, functions of wavelength. As is common practice, we work with three representative wavelength bands --- the RGB channels --- and every radiometric quantity in this thesis should be read as a triple. Now that we have the basic quantities, we can model how light interacts with surfaces.
 
 \section{The Rendering Equation and Global Illumination}
 \label{sec:bg_rendering_equation}
 % Surface light transport: BRDF, the rendering equation, why solving it
 % globally is hard. Reflection and refraction (Fresnel, Snell) as the BSDF
 % cases that later give rise to caustics.
+Light emitted from a source is absorbed and scattered by the solid surfaces of a scene, often many times, before a fraction of it finally reaches the eye. At every such surface interaction we wish to know the relationship between the incoming and the outgoing light: given the light arriving at a surface point from all directions, what is the radiance leaving toward one particular direction? With such a relation we can follow a light ray from the source step by step, compute its changes along the trip, and hope that it ends up in the eye --- or, in reverse, trace from the eye and hope to reach a light source (more on this in \cref{sec:bg_monte_carlo}). This relation is the \emph{rendering equation}, introduced by Kajiya \cite{kajiya86}:
+\begin{equation}
+	\label{eq:rendering_equation}
+	L_o(\mathbf{x}, \omega_o)
+	= L_e(\mathbf{x}, \omega_o)
+	+ \int_{\mathcal{H}^2} f_r(\mathbf{x}, \omega_i, \omega_o) \, L_i(\mathbf{x}, \omega_i) \cos\theta_i \,\mathrm{d}\omega_i \,.
+\end{equation}
+It states that the outgoing radiance $L_o$ at surface point $\mathbf{x}$ in direction $\omega_o$ is the sum of two contributions. The first, $L_e(\mathbf{x}, \omega_o)$, is the radiance emitted by the surface itself and is nonzero only for light sources. The second collects, over the unit hemisphere $\mathcal{H}^2$ above the surface, the incoming radiance $L_i(\mathbf{x}, \omega_i)$ from every direction $\omega_i$, weighted by two factors: the cosine of the angle $\theta_i$ between $\omega_i$ and the surface normal, which accounts for the foreshortening of the surface as seen from $\omega_i$ (the projected-area term already familiar from the definition of radiance), and the function $f_r$, which describes the material.
+
+This function $f_r(\mathbf{x}, \omega_i, \omega_o)$ is the \emph{bidirectional reflectance distribution function} (BRDF). Light arriving from an infinitesimal cone of directions $\mathrm{d}\omega_i$ around $\omega_i$ alone deposits the differential irradiance $\mathrm{d}E(\omega_i) = L_i(\mathbf{x}, \omega_i)\cos\theta_i \,\mathrm{d}\omega_i$ --- precisely one integrand slice of the hemispherical integral $E = \int L\cos\theta \,\mathrm{d}\omega$ from \cref{sec:bg_radiometry}. The BRDF is defined as the ratio of the differential outgoing radiance this deposit causes toward $\omega_o$ to the deposit itself,
+\begin{equation}
+	f_r(\mathbf{x}, \omega_i, \omega_o) = \frac{\mathrm{d}L_o(\mathbf{x}, \omega_o)}{\mathrm{d}E(\mathbf{x}, \omega_i)} = \frac{\mathrm{d}L_o(\mathbf{x}, \omega_o)}{L_i(\mathbf{x}, \omega_i)\cos\theta_i \,\mathrm{d}\omega_i} \,,
+\end{equation}
+with unit $\mathrm{sr^{-1}}$; summing the resulting contributions $\mathrm{d}L_o = f_r L_i \cos\theta_i \,\mathrm{d}\omega_i$ over all incoming directions is exactly what the integral in \cref{eq:rendering_equation} does. The BRDF is where the appearance of a material lives. Physically plausible BRDFs are reciprocal --- swapping $\omega_i$ and $\omega_o$ leaves the value unchanged --- and energy conserving, reflecting in total no more energy than they receive. Two idealized cases bound the spectrum of real materials. An ideal diffuse (Lambertian) surface reflects incoming light equally in all directions, giving the constant BRDF $f_r = \rho/\pi$ with albedo $\rho$. An ideal specular surface reflects each incoming direction into exactly one outgoing direction, so its BRDF is a Dirac delta distribution: a mirror reflects $\omega_i$ about the normal, while a transparent surface additionally bends light \emph{into} the material according to Snell's law of refraction, the Fresnel equations dictating how the energy splits between the reflected and refracted parts. Once transmission is included, light may leave through the lower hemisphere as well; the generalization of the BRDF to the full sphere of directions is called the \emph{bidirectional scattering distribution function} (BSDF), and the integral in \cref{eq:rendering_equation} then runs over the whole sphere. Specular surfaces are what focus light into the bright, curved patterns known as \emph{caustics} --- a phenomenon that is notoriously difficult for eye-path tracing and a key motivation for the photon-based methods discussed in \cref{chap:related_work}.
+
+One may notice that the incoming radiance $L_i$ inside the integral is itself the outgoing radiance of some other surface point --- the rendering equation is recursive, and as written it describes only a single scattering event of light's whole journey from a source to the eye. The effort of estimating the entirety of all such journeys is called solving the \emph{global illumination} problem. In the early age of computer graphics, when computing power was scarce, renderers avoided it by evaluating only certain aspects of the equation for a restricted set of light paths (e.g.\ direct lighting only), which gave rise to various stylized shading models. Nowadays, with better hardware, the field pursues full accuracy --- or, as in this thesis, accuracy and efficiency at the same time.
 
 \section{Light Transport in Participating Media}
 \label{sec:bg_media}
 % Extend to volumes: absorption, out-/in-scattering, emission; extinction
 % and albedo; phase functions (isotropic, Henyey-Greenstein); transmittance
 % and the volume rendering equation (RTE).
+Participating media are substances like fog, water, and smoke. Instead of stopping light at their boundary the way an opaque surface does, they let it travel inside, where it interacts with the many small particles suspended within --- water droplets, dust, soot. The interactions are absorption and scattering, just as with surfaces. However, modeling every particle individually would be an enormous labor and would pile even more complexity onto the already hard-to-evaluate rendering equation. Instead, each medium is modeled as a whole --- a continuum --- carrying a few parameters that determine its nature. The \emph{absorption coefficient} $\sigma_a$ and the \emph{scattering coefficient} $\sigma_s$, both with unit $\mathrm{m^{-1}}$, give the probability density per unit distance traveled that light is absorbed or scattered, respectively; e.g.\ a larger $\sigma_a$ makes it more likely that light is absorbed while traversing the medium. Their sum $\sigma_t = \sigma_a + \sigma_s$ is the \emph{extinction coefficient}, the probability density of \emph{any} interaction, and the ratio $\alpha = \sigma_s / \sigma_t$ --- the probability that an interaction scatters rather than absorbs --- is called the \emph{scattering albedo}, the medium's counterpart of a surface's albedo.
 
+Four types of interaction are modeled: (1) \emph{emission}: particles generate light energy, so that the medium acts as a light source, e.g.\ fire; (2) \emph{absorption}: light energy is absorbed by a particle, e.g.\ in black smoke; (3) \emph{in-scattering}: light traveling in some other direction is scattered into the direction we are following; (4) \emph{out-scattering}: light in our direction loses energy because part of it is scattered into other directions. Note that (3) and (4) both describe the same physical event --- a particle redirecting light from one direction into another --- and differ only in perspective: watching the old direction, the event is a loss (out-scattering); watching the new one, it is a gain (in-scattering). In summary, when modeling the light at a position inside the medium along one direction, we must account for the gain of energy due to emission at that location and in-scattering from all directions (over the full unit sphere), and the loss of energy due to absorption and out-scattering. This intuition gives rise to the rendering equation for participating media, the \emph{radiative transfer equation} (RTE) \cite{chandrasekhar50}. Parametrizing a ray as $\mathbf{x}_t = \mathbf{x} + t\omega$, the change of radiance per unit distance along it is
+\begin{equation}
+	\label{eq:rte}
+	\frac{\mathrm{d}}{\mathrm{d}t} L(\mathbf{x}_t, \omega)
+	= -\sigma_t \, L(\mathbf{x}_t, \omega)
+	+ \sigma_a \, L_e(\mathbf{x}_t, \omega)
+	+ \sigma_s \int_{\mathcal{S}^2} p(\omega', \omega) \, L(\mathbf{x}_t, \omega') \,\mathrm{d}\omega' \,,
+\end{equation}
+Here we write the coefficients without arguments to keep the notation light; in general, each of $\sigma_a$, $\sigma_s$, $\sigma_t$ may vary along the ray, taking its value at the current position $\mathbf{x}_t$ (we return to this distinction --- homogeneous versus heterogeneous media --- at the end of the section). The three terms on the right correspond directly to the interactions above. The first is the loss term: it folds (2) and (4) together, since both remove a fraction $\sigma_t = \sigma_a + \sigma_s$ of the current radiance per unit distance. The second is the gain by (1), the medium's own emitted radiance $L_e$. The third is the gain by (3): radiance arriving from every direction $\omega'$ on the unit sphere $\mathcal{S}^2$, redirected into $\omega$ as described by the phase function $p$ (explained below). Note the structural similarity to \cref{eq:rendering_equation} --- an emission term plus a scattering integral over incoming directions --- with one key difference: on a surface the interaction happens at a single point, while in a medium it happens continuously, at a rate per unit distance, which is why the RTE is a differential equation.
+
+The loss term alone already explains the most familiar volumetric effect: light dimming as it penetrates a medium. Consider a ray along which we ignore all gains, so that $\frac{\mathrm{d}}{\mathrm{d}t} L = -\sigma_t L$. This first-order ordinary differential equation has the solution
+\begin{equation}
+	L(\mathbf{x}_t, \omega) = L(\mathbf{x}, \omega) \, e^{-\int_0^t \sigma_t(\mathbf{x}_s) \,\mathrm{d}s} \,,
+\end{equation}
+i.e.\ the radiance decays exponentially with the accumulated extinction along the ray (the \emph{optical thickness}). The surviving fraction
+\begin{equation}
+	\label{eq:transmittance}
+	T_r(\mathbf{x} \rightarrow \mathbf{x}_t) = e^{-\int_0^t \sigma_t(\mathbf{x}_s) \,\mathrm{d}s}
+\end{equation}
+is called the \emph{transmittance} between the two points; the relation is known as the Beer--Lambert law. With the transmittance in hand, the RTE can be integrated along the ray into its integral form, the \emph{volume rendering equation}: the radiance arriving at $\mathbf{x}$ from direction $-\omega$ is the radiance leaving the nearest surface behind the medium (at distance $z$), attenuated by the transmittance of the full segment, plus the emission and in-scattering gains at every point along the ray, each attenuated by the transmittance from that point forward. Abbreviating the in-scattered radiance from \cref{eq:rte} as
+\begin{equation}
+	\label{eq:inscatter}
+	L_s(\mathbf{x}_t, \omega) = \int_{\mathcal{S}^2} p(\omega', \omega) \, L(\mathbf{x}_t, \omega') \,\mathrm{d}\omega' \,,
+\end{equation}
+the volume rendering equation reads
+\begin{equation}
+	\label{eq:vre}
+	L(\mathbf{x}, \omega) = T_r(\mathbf{x}_z \rightarrow \mathbf{x}) \, L_o(\mathbf{x}_z, \omega)
+	+ \int_0^z T_r(\mathbf{x}_t \rightarrow \mathbf{x}) \left[ \sigma_a L_e(\mathbf{x}_t, \omega) + \sigma_s L_s(\mathbf{x}_t, \omega) \right] \mathrm{d}t \,.
+\end{equation}
+This form is the one a renderer actually evaluates for each camera ray, and the transmittance toward the camera --- the camera-side attenuation --- is precisely what our method precomputes in \cref{chap:method}.
+
+The phase function $p(\omega', \omega)$ is the medium's relative of the BRDF: where a surface reflects into the hemisphere above it, a particle scatters into the full sphere of directions the light could possibly leave toward. There is a subtle difference in normalization, however. For the BRDF, energy conservation only demands an inequality --- $\int_{\mathcal{H}^2} f_r \cos\theta_o \,\mathrm{d}\omega_o \leq 1$ --- since a surface may absorb part of the incident light, and that absorption is folded into the BRDF's magnitude. The phase function instead integrates to exactly one, $\int_{\mathcal{S}^2} p(\omega', \omega) \,\mathrm{d}\omega = 1$: in a medium, absorption is already handled separately by the split into $\sigma_a$ and $\sigma_s$, so the phase function is left with only one job, distributing the scattered light over the new directions --- it is a pure probability distribution. The simplest phase function is the \emph{isotropic} one, $p = \frac{1}{4\pi}$, which scatters equally in all directions --- the volumetric counterpart of the Lambertian BRDF. Most real media, however, prefer to scatter forward (e.g.\ clouds) or backward. The standard model for such behavior is the \emph{Henyey--Greenstein} phase function \cite{henyey41}, which depends only on the angle $\theta$ between $\omega'$ and $\omega$:
+\begin{equation}
+	\label{eq:henyey_greenstein}
+	p(\theta) = \frac{1}{4\pi} \frac{1 - g^2}{\left(1 + g^2 - 2g\cos\theta\right)^{3/2}} \,,
+\end{equation}
+where the asymmetry parameter $g \in (-1, 1)$ controls the preference: $g > 0$ scatters predominantly forward, $g < 0$ backward, and $g = 0$ recovers the isotropic case.
+
+Finally, a medium is called \emph{homogeneous} when its density is the same everywhere, i.e.\ the coefficients are constant over the region of the medium; the optical thickness then reduces to $\sigma_t \, t$ and the transmittance to the closed form $e^{-\sigma_t t}$. In a \emph{heterogeneous} medium the coefficients vary with position, and the integral in \cref{eq:transmittance} must itself be evaluated numerically, e.g.\ by marching along the ray.
 \section{Monte Carlo Integration}
 \label{sec:bg_monte_carlo}
 % Estimators, variance, importance sampling; distance/free-flight sampling
