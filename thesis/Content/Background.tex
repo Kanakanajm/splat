@@ -104,11 +104,92 @@ The phase function $p(\omega', \omega)$ is the medium's relative of the BRDF: wh
 where the asymmetry parameter $g \in (-1, 1)$ controls the preference: $g > 0$ scatters predominantly forward, $g < 0$ backward, and $g = 0$ recovers the isotropic case.
 
 Finally, a medium is called \emph{homogeneous} when its density is the same everywhere, i.e.\ the coefficients are constant over the region of the medium; the optical thickness then reduces to $\sigma_t \, t$ and the transmittance to the closed form $e^{-\sigma_t t}$. In a \emph{heterogeneous} medium the coefficients vary with position, and the integral in \cref{eq:transmittance} must itself be evaluated numerically, e.g.\ by marching along the ray.
+
 \section{Monte Carlo Integration}
 \label{sec:bg_monte_carlo}
 % Estimators, variance, importance sampling; distance/free-flight sampling
 % for media; path tracing as the canonical unbiased solver and why it is
 % slow for media.
+Both rendering equations --- the surface form (\cref{eq:rendering_equation}) and the volume form (\cref{eq:vre}) --- contain integrals over the incoming directions. The recursion itself is not the obstacle: as noted in \cref{sec:bg_rendering_equation}, the incoming radiance inside the integral is the outgoing radiance of some other point, so the equation can be expanded step by step, one scattering event at a time. The obstacle is that each step then still contains an integral over a continuum of directions, whose integrand has no closed form and can only be evaluated point by point --- exact evaluation is infeasible even for modern computers. What we can do is \emph{estimate} the integral from a finite number of such point evaluations, which we call \emph{samples}.
+
+The simplest estimate of this kind is the \emph{Riemann sum}: since an integral is the area under the curve, we can cut the domain $[a, b]$ into $N$ strips of equal width and add up the areas of the resulting rectangles,
+\begin{equation}
+	\label{eq:riemann_sum}
+	\int_a^b f(x) \,\mathrm{d}x \;\approx\; \frac{b-a}{N} \sum_{k=1}^{N} f(x_k) \,,
+\end{equation}
+where $x_k$ is a fixed representative of the $k$-th strip, e.g.\ its midpoint (\cref{fig:riemann_vs_mc}, left). As $N$ grows, the strips narrow and the sum converges to the integral.
+
+\begin{figure}[t]
+	\centering
+	\begin{tikzpicture}[scale=1.0]
+		\foreach \m in {0.25,0.75,...,3.75}
+			\draw[fill=black!12, draw=black!50] (\m-0.25,0) rectangle (\m+0.25,{2+0.8*sin(2*\m r)});
+		\draw[thick] plot[domain=0:4, samples=100, smooth] (\x, {2+0.8*sin(2*\x r)});
+		\draw[->] (-0.2,0) -- (4.4,0);
+		\draw[->] (0,-0.2) -- (0,3.2) node[left] {$f(x)$};
+		\draw (0,0.06) -- (0,-0.06) node[below] {$a$};
+		\draw (4,0.06) -- (4,-0.06) node[below] {$b$};
+	\end{tikzpicture}
+	\hspace{2em}
+	\begin{tikzpicture}[scale=1.0]
+		\draw[thick] plot[domain=0:4, samples=100, smooth] (\x, {2+0.8*sin(2*\x r)});
+		\foreach \s in {0.31,0.62,1.05,1.83,2.02,2.77,3.16,3.64} {
+			\draw[densely dotted] (\s,0) -- (\s,{2+0.8*sin(2*\s r)});
+			\fill (\s,{2+0.8*sin(2*\s r)}) circle (1.6pt);
+		}
+		\draw[->] (-0.2,0) -- (4.4,0);
+		\draw[->] (0,-0.2) -- (0,3.2) node[left] {$f(x)$};
+		\draw (0,0.06) -- (0,-0.06) node[below] {$a$};
+		\draw (4,0.06) -- (4,-0.06) node[below] {$b$};
+	\end{tikzpicture}
+	\caption{Estimating the same integral with $N = 8$ samples. Left: the Riemann sum evaluates $f$ at evenly spaced, pre-determined positions and sums the strip areas. Right: Monte Carlo evaluates $f$ at randomly drawn positions and multiplies the average sample value by the domain size.}
+	\label{fig:riemann_vs_mc}
+\end{figure}
+
+A small regrouping of the right-hand side of \cref{eq:riemann_sum},
+\begin{equation*}
+	\frac{b-a}{N} \sum_{k=1}^{N} f(x_k) \;=\; (b-a) \cdot \underbrace{\frac{1}{N} \sum_{k=1}^{N} f(x_k)}_{\text{average sample value}} \,,
+\end{equation*}
+reveals a second reading: the second factor is simply the \emph{average} of the sampled function values, so the Riemann sum is \enquote{average height times width of the domain}. The evenly spaced positions are, however, only one way of taking that average. Suppose we instead throw the $N$ positions onto $[a, b]$ \emph{at random} --- uniformly, so that no part of the domain is favored. The mean of the sampled values still approximates the same average height of $f$: uniform random positions also cover the domain evenly, only in tendency rather than by construction, and their mean therefore settles toward the same value as $N$ grows.
+
+Probability theory makes this precise, and gives the limiting value a name. A random variable $X$ is described by its \emph{probability density function} (PDF) $p$, where $p(x)\,\mathrm{d}x$ is the probability of $X$ landing in the infinitesimal interval $\mathrm{d}x$ around $x$. Our uniformly thrown positions make the simplest example: favoring no part of the domain means every point has the same chance of being picked, so $p$ must be a constant over $[a,b]$ --- and since the total probability of landing \emph{somewhere} must be one, $\int_a^b p(x) \,\mathrm{d}x = 1$, that constant can only be $\frac{1}{b-a}$. The \emph{expected value} of a function $g$ of $X$ is defined as each possible value weighted by the density of it occurring,
+\begin{equation}
+	\label{eq:expected_value}
+	\mathrm{E}[g(X)] = \int g(x) \, p(x) \,\mathrm{d}x \,,
+\end{equation}
+and the \emph{law of large numbers} states that the mean of independent samples, $\frac{1}{N}\sum_k g(X_k)$, converges to $\mathrm{E}[g(X)]$ as $N \to \infty$. The expected value is thus exactly the idealized average that sample means settle toward. For our case $g = f$ and the uniform density, \cref{eq:expected_value} yields $\mathrm{E}[f(X)] = \frac{1}{b-a}\int_a^b f(x)\,\mathrm{d}x$ --- the average height of $f$ over the domain, so that $(b-a) \, \mathrm{E}[f(X)]$ is precisely our integral. Estimating the integral has therefore become: draw uniform samples, take their mean, scale by the domain size. This is \emph{Monte Carlo integration}: where the Riemann sum evaluates $f$ at pre-determined, evenly spaced positions or from a uniform distribution, Monte Carlo draws the positions randomly (\cref{fig:riemann_vs_mc}, right).
+
+In its general form, the sample positions need not even be uniform. Drawing the $X_k$ from any PDF $p$ that is nonzero wherever $f$ is, the \emph{Monte Carlo estimator}
+\begin{equation}
+	\label{eq:mc_estimator}
+	F_N = \frac{1}{N} \sum_{k=1}^{N} \frac{f(X_k)}{p(X_k)}
+\end{equation}
+still recovers the desired integral. Note that it is not the plain average of the sample values: each $f(X_k)$ is divided by the probability density of drawing that very position, so regions the sampler visits more often than their share are counted with proportionally less weight. This division is exactly what cancels the distortion introduced by non-uniform sampling, as applying \cref{eq:expected_value} with $g = f/p$ shows:
+\begin{equation*}
+	\mathrm{E}[F_N]
+	= \frac{1}{N} \sum_{k=1}^{N} \mathrm{E}\!\left[\frac{f(X_k)}{p(X_k)}\right]
+	= \mathrm{E}\!\left[\frac{f(X)}{p(X)}\right]
+	= \int \frac{f(x)}{p(x)} \, p(x) \,\mathrm{d}x
+	= \int f(x) \,\mathrm{d}x \,.
+\end{equation*}
+This holds for any $N$ --- the estimator is \emph{unbiased}: its error is never a systematic offset, only random variance around the correct value. (The support condition is what permits the cancellation: wherever $p = 0$, $f$ must vanish too, so no part of the integral is lost.) Choosing the uniform density $p = \frac{1}{b-a}$ recovers the form above.
+
+How does one draw samples from a prescribed density $p$ in the first place, given that a computer only supplies uniform random numbers $\xi \in [0, 1)$? The standard technique is \emph{inversion}, built on the \emph{cumulative distribution function} (CDF)
+\begin{equation*}
+	P(x) = \int_{-\infty}^{x} p(x') \,\mathrm{d}x' \,,
+\end{equation*}
+the total probability of a $p$-distributed variable falling at or below $x$. The CDF climbs monotonically from $0$ to $1$ and determines the distribution completely, since the density is recovered as its derivative, $p = P'$. A variable therefore has density $p$ precisely when its CDF is $P$, and $X = P^{-1}(\xi)$ satisfies this: by monotonicity, $X \leq x$ is equivalent to $\xi \leq P(x)$, and a uniform $\xi$ falls below the threshold $P(x)$ with probability exactly $P(x)$. Intuitively, the CDF climbs steeply wherever $p$ is large, so a uniformly thrown $\xi$ is more likely to land on a steep stretch --- and be mapped into the corresponding, high-density region of $x$.
+
+Why prefer Monte Carlo over the Riemann sum in rendering? The decisive difference is how the two cope with high-dimensional domains. A grid-based rule like the Riemann sum must subdivide every axis of the domain at once: spreading $N$ samples over a $d$-dimensional grid leaves only $\sqrt[d]{N}$ subdivisions per axis, so a million samples in six dimensions amount to a grid of merely ten strips in each direction --- and every further dimension coarsens the grid again. This rapid loss of resolution is known as the \emph{curse of dimensionality}. Monte Carlo builds no grid at all: samples are thrown into the domain individually, and the estimate sharpens steadily with their number, regardless of the dimension. The integrals of light transport are of exactly this hostile kind: expanding the recursion of the rendering equation adds one integration domain per scattering event, so the full problem is an integral over paths of arbitrary length --- of unbounded dimension. In addition, the integrand jumps discontinuously (an emitter is visible from one direction and occluded from a neighboring one), which grid-based rules handle poorly but point sampling tolerates without complaint. The price Monte Carlo pays is variance, which in an image shows up as pixel noise that fades only slowly with more samples.
+
+The freedom to choose $p$ in \cref{eq:mc_estimator} is also the main lever for reducing that variance: the closer $p$ is proportional to the integrand, the less the individual terms $f(X_k)/p(X_k)$ fluctuate --- if $p \propto f$ exactly, every sample yields the same value and the variance is zero. Placing samples preferentially where the integrand is large is called \emph{importance sampling} \cite{veach97}. Renderers importance-sample whatever factors of the integrand they know in closed form: the BRDF lobe and the phase function (Henyey--Greenstein admits an analytic inversion). Participating media add one more integral to estimate: the volume rendering equation (\cref{eq:vre}) accumulates contributions from every point along the ray through the medium; a sample from this domain is a distance $t$ along the ray --- physically, the position of the light's next interaction with the medium. Because the integrand carries the transmittance, the distance should be drawn with density $p(t) = \sigma_t e^{-\sigma_t t}$ (for a homogeneous medium). This density can be read in two ways. Physically, the light first survives to depth $t$ undisturbed, with probability $e^{-\sigma_t t}$ by \cref{eq:transmittance}, and then interacts within the following sliver $\mathrm{d}t$, with probability $\sigma_t \,\mathrm{d}t$ --- $\sigma_t$ being the interaction probability per unit distance. Formally, the prefactor $\sigma_t$ is exactly the constant that normalizes the exponential to total probability one over $[0, \infty)$: in an unbounded medium, the light is certain to interact somewhere. Inverting the CDF $P(t) = 1 - e^{-\sigma_t t}$ gives
+\begin{equation}
+	\label{eq:free_flight}
+	t = -\frac{\ln(1 - \xi)}{\sigma_t} \,,
+\end{equation}
+known as \emph{free-flight} (or distance) sampling. It is a routine used in nearly every volumetric light transport algorithm, including the photon tracing pass of our method.
+
+Assembling these pieces yields \emph{path tracing}, the canonical Monte Carlo renderer \cite{kajiya86}: starting from the eye, repeatedly importance-sample one direction (and, in media, one distance) at each interaction, building a random path that is terminated into a light source; averaging many such paths per pixel gives an unbiased estimate of \cref{eq:rendering_equation,eq:vre}. Path tracing converges to the exact solution and serves as the reference in \cref{chap:results}, but participating media make it slow: light may scatter many times inside a medium before escaping, and paths that undergo specular reflection or refraction rarely manage to connect to a light source at all --- the caustic problem from \cref{sec:bg_rendering_equation}, aggravated in volumes. These weaknesses motivate the two-pass methods of the next section.
 
 \section{Density Estimation and Photon Mapping}
 \label{sec:bg_density_estimation}
