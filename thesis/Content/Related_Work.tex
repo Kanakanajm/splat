@@ -8,14 +8,56 @@
 % reference/baseline renderers (PT, PPM, Mitsuba). One brief description per
 % work plus what we take from it or why it falls short for our goal.
 
-\section{Classic Photon Mapping}
-\subsection{Participating media consideration}
-\section{Progressive Photon Mapping}
-\section{Camera Beam Gathering Photon (Jarosz)}
-\section{Jarosz's framework}
-\subsection{Photon Beam}
-\subsection{Generalization of different estimators}
-\subsection{Beam x Beam 1D estimator}
-\section{Photon Splatting}
-\section{Photon Disk Splatting for Participating media}
+% Classic photon mapping itself is covered in Background (density estimation
+% section); here we start directly at its volumetric extension.
+
+\section{Photon Mapping in Participating Media}
+
+Photon mapping \cite{jensen96} is a two-pass algorithm: a light pass emits \emph{photons} from the light sources, traces them through the scene, and stores them where they land on diffuse surfaces; a rendering pass then traces camera rays and estimates the reflected radiance $L_r$ at each hit point by gathering the nearby photons with a kernel. \Cref{sec:bg_density_estimation} develops both passes in detail; here we follow the idea into participating media.
+
+% jensen98: volume photon map, point-based radiance estimate in media
+\subsection{Volumetric Photon Mapping}
+
+Jensen and Christensen \cite{jensen98} extended this concept to participating media. In the light pass, photon paths now interact with the medium itself: propagation distances are drawn by free-flight sampling (\cref{eq:free_flight}), which builds the transmittance into the sampling, and at each scattering event the phase function takes the role of the BRDF, providing the next direction and the weight of the carried flux --- the changes mirror, term by term, the step from the rendering equation (\cref{eq:rendering_equation}) to its volumetric counterpart (\cref{eq:vre}). Photons stored at these events form a \emph{volume photon map}, kept separate from the surface map, and its gather (\cref{eq:volume_gather}) normalizes by the volume of a sphere instead of the area of a disc. Heterogeneous media fit the same machinery at the cost of numerical integration: with spatially varying coefficients, both the free-flight distances and the transmittance require accumulating the optical thickness step by step along the ray (\cref{eq:transmittance}), rather than evaluating a closed form. In the rendering pass, a camera ray crossing the medium is evaluated by \emph{ray marching}: at each step along the ray, a spherical gather estimates the in-scattered radiance at that position, which is attenuated by the transmittance toward the camera and accumulated --- a direct discretization of \cref{eq:vre}.
+
+% jarosz08beam-tech: gather along the whole camera ray instead of at points
+\subsection{The Beam Radiance Estimate}
+
+In a medium, photons occupy a three-dimensional region rather than a two-dimensional surface, and the volume rendering equation integrates the in-scattered radiance over the ray's entire extent --- which the marching above approximates step by discrete step, gather by repeated gather, with neighboring steps querying nearly the same photons. Jarosz et al.\ \cite{jarosz08beam-tech} observed that the marching can be dropped entirely: the union of all those spherical gathers is in effect a cylinder around the ray, so one may directly collect every photon lying within a kernel radius of the ray and let each contribute once to the whole ray. The seemingly awkward point-in-cylinder query reduces, by symmetry, to a ray--sphere intersection with a closed-form solution: a photon within distance $r$ of the ray is the same as the ray piercing a sphere of radius $r$ centered on that photon --- a kernel around the ray is equivalent to a kernel around each photon. Storing a per-photon radius sized from the local photon density and traversing a hierarchy over the resulting spheres yields all contributors to a ray in a single sweep. The authors call this whole-ray estimate the \emph{beam radiance estimate}: the camera ray, thickened by the gather radii, becomes a beam. Beyond removing the step size and its cost, the reformulation also improves the quality of the estimate --- an effect made precise by the unified theory of the next section, where the light paths themselves become beams as well.
+
+\section{Photon Beams}
+% jarosz11comprehensive
+\subsection{From Photon Points to Photon Beams}
+
+A photon travels in a straight line between two interactions, and along that segment its power is already known everywhere: the starting power scaled by the transmittance, which for a homogeneous medium is a simple closed form in the distance (\cref{eq:transmittance}). Storing only the segment's endpoints therefore discards illumination the light pass has already computed. Jarosz et al.\ \cite{jarosz11comprehensive} store the whole segment instead and call it a \emph{photon beam} --- transplanting an idea explored for surfaces as the ray map \cite{havran05raymap} into media, where it pays off far more: a handful of beams covers a volume much more densely than clouds of points, so fewer light paths suffice for the same quality.
+
+\subsection{A Unified Theory of Volumetric Radiance Estimators}
+
+The same work reorganizes all volumetric radiance estimation around three choices: the query (a point in the medium, or a whole camera ray), the data (photon points, or photon beams), and the dimensionality of the blur kernel coupling the two (3D, 2D, or 1D). Crossing these choices yields nine estimators, with the earlier methods as special cases --- volumetric photon mapping is point $\times$ point with 3D blur, the beam radiance estimate is camera ray $\times$ point with 2D blur. The theory's two lessons: beams as data reduce variance (each beam contributes along its entire length), and lower-dimensional kernels reduce bias (fewer directions are blurred). Both point to the estimator at the extreme corner, treated next.
+
+% the estimator our splatting pass approximates
+\subsection{The Beam--Beam 1D Estimate}
+
+When both sides are beams --- a camera ray and a photon beam, each a line --- their interaction reduces to the pair of mutually closest points, and the blur to a single dimension: the perpendicular distance $d$ between the two lines. Every photon beam passing the camera ray within its width $r_j$ contributes
+\begin{equation}
+	\label{eq:beam_beam_1d}
+	L \;\approx\; \sigma_s \sum_{j=1}^{k} p(\theta_j) \, \frac{\Delta\Phi_j}{2 r_j} \, \frac{e^{-\sigma_t t_c} \, e^{-\sigma_t t_j}}{\sin\theta_j} \,,
+\end{equation}
+where $\theta_j$ is the angle between the two lines, and $t_c$ and $t_j$ are the distances to the closest points along the camera ray and along the beam, giving the two transmittances --- one toward the camera, one along the beam. The $1/\sin\theta_j$ factor accounts for the longer overlap of nearly parallel lines, and $\sigma_s$ appears explicitly because a beam stores flux still in flight, whose scattering toward the camera has not yet happened --- unlike the stored scattering events of \cref{eq:volume_gather}. Jarosz et al.\ give this estimator a geometric reading: each beam's blur cylinder is replaced by a flat rectangle that always faces the camera --- a \emph{billboard}. This is the estimator our method evaluates, and \cref{chap:method} rasterizes exactly these billboards.
+
+\section{Progressive Refinement}
+% hachisuka08: baseline PPM in Results
+\subsection{Progressive Photon Mapping}
+% jarosz11progressive
+\subsection{Progressive Photon Beams}
+
+\section{Splatting Approaches}
+% sturzlinger01splat: scatter photons to screen instead of gathering
+\subsection{Photon Splatting on Surfaces}
+% boudet05photon: closest prior work to ours
+\subsection{Photon Splatting for Participating Media}
+
+% kim01opacity: basis of our slice-based camera-side attenuation (pass 2)
+\section{Opacity Shadow Maps}
+
 \section{Relationship to 3D Gaussian Splatting}
