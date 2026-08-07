@@ -29,6 +29,7 @@ Before refining over direction as well, we need a way to measure sets of directi
 
 The quantity most relevant to rendering is \emph{radiance}: the flux arriving at (or leaving) a point of a surface, per unit projected area, per unit solid angle,
 \begin{equation}
+	\label{eq:radiance}
 	L(\mathbf{x}, \omega) = \frac{\mathrm{d}^2\Phi}{\mathrm{d}\omega \, \mathrm{d}A^{\perp}(\mathbf{x})} = \frac{\mathrm{d}^2\Phi}{\mathrm{d}\omega \, \mathrm{d}A(\mathbf{x}) \cos\theta},
 \end{equation}
 measured in $\mathrm{W/m^2/sr}$. Here $\mathrm{d}A^{\perp} = \mathrm{d}A\cos\theta$ is the surface area projected perpendicular to $\omega$, with $\theta$ the angle between $\omega$ and the surface normal: a surface viewed at a grazing angle intercepts less light per unit of its own area, and the projection makes radiance a property of the light ray itself rather than of the receiving surface. Indeed, radiance remains constant along a ray in empty space --- a property we will lose, deliberately, once we enter participating media in \cref{sec:bg_media}. Radiance is exactly what a pinhole camera measures: the light energy arriving at a specific position on the film from the single direction passing through the pinhole (at a certain time, assuming we render a static image rather than a video). Conversely, integrating radiance over the hemisphere of incoming directions recovers irradiance, $E(\mathbf{x}) = \int L(\mathbf{x}, \omega)\cos\theta \,\mathrm{d}\omega$.
@@ -196,6 +197,41 @@ Assembling these pieces yields \emph{path tracing}, the canonical Monte Carlo re
 % The bridge from MC to our method: two-pass light transport, photon maps,
 % kernel density estimation, radiance estimate on surfaces and in media;
 % bias/consistency trade-off. Historical variants stay in Related Work.
+
+Path tracing, as described in the previous section, traces rays from the camera backwards into the scene and collects radiance when a path hits an area light --- or, more efficiently, at every bounce by attempting a direct connection to a light source, a technique known as next event estimation \cite{pharr23pbrt}. One class of light paths, however, resists this approach: \emph{caustics}, paths that leave the light, pass through one or more specular reflections or refractions, bounce off a diffuse surface, and end in the eye --- the bright patterns at the bottom of a swimming pool, or the focused streak behind a glass. At a specular surface the next ray direction is fully determined by the incoming one (e.g.\ a mirror), so a path traced from the eye side cannot steer itself toward the light; it must hit it by chance. For a point light behind an ideal specular chain that chance is exactly zero, and for a small area light vanishingly small. In a path-traced image, caustics therefore appear noisy and take a long time to even emerge.
+
+Focusing on caustics, one arrives at a reversal: why not trace paths from the \emph{light} first, determine where its energy lands throughout the scene, and only then render the image using this already-known information? This is the idea behind photon mapping \cite{jensen96} and the family of related methods covered in \cref{chap:related_work}. Of a light source we know its shape, position, orientation, and its power $\Phi$ in Watts. Power, as introduced in \cref{sec:bg_radiometry}, is a property of the source as a whole: every point of an area light emits toward every direction, and following all of these positions and directions is as impossible as evaluating an integral exactly. Monte Carlo integration therefore enters once more, this time on the emission side: we draw a starting position on the light's surface and an outgoing direction at random and follow the resulting path through the scene. Each such path is one sample in the sense of \cref{eq:mc_estimator}, and the quantity being sampled is the flux: the $N$ traced paths divide the finite power $\Phi$ among themselves, each carrying a packet $\Delta\Phi \approx \Phi/N$ (in general weighted by the inverse of its sampling densities --- the familiar $f/p$ pattern).
+
+Each packet is traced through the scene like any light path, until it lands on a diffuse surface. Connecting it from there to the camera runs into the mirror image of the caustic problem: a light path can no more aim at a pinhole camera than an eye path can aim at a point light. So instead of forcing the connection, we deposit the energy where it landed: at every diffuse surface the path crosses, a \emph{photon} is stored --- position, incoming direction $\omega_j$, and carried flux $\Delta\Phi_j$ --- and the collection of all stored photons is called the \emph{photon map}. The connection to the camera is postponed to the rendering pass.
+
+That connection cannot be exact either. A camera ray's hit point and a stored photon's position are both produced by independent random sampling, and as with any continuous distribution, the probability of two sampled points coinciding is zero. What a hit point $\mathbf{x}$ \emph{can} know is the photons in its neighborhood; estimating a continuous quantity from the discrete samples scattered around a query point is a classic statistical technique called \emph{density estimation} \cite{silverman86}. To see what exactly is being estimated, we follow the derivation of \cite{jensen96} starting from the scattering integral of \cref{eq:rendering_equation}. Solving the definition of radiance (\cref{eq:radiance}) for the incident flux gives
+\begin{equation*}
+	L_i(\mathbf{x}, \omega_i) \cos\theta_i = \frac{\mathrm{d}^2\Phi_i(\mathbf{x}, \omega_i)}{\mathrm{d}A \,\mathrm{d}\omega_i} \,.
+\end{equation*}
+Substituting this into the scattering integral cancels both the cosine and the solid angle:
+\begin{equation}
+	\label{eq:gather_integral}
+	L_r(\mathbf{x}, \omega_o)
+	= \int_{\mathcal{H}^2} f_r(\mathbf{x}, \omega_i, \omega_o) \, \frac{\mathrm{d}^2\Phi_i(\mathbf{x}, \omega_i)}{\mathrm{d}A \,\mathrm{d}\omega_i} \,\mathrm{d}\omega_i
+	= \int_{\mathcal{H}^2} f_r(\mathbf{x}, \omega_i, \omega_o) \, \frac{\mathrm{d}^2\Phi_i(\mathbf{x}, \omega_i)}{\mathrm{d}A} \,.
+\end{equation}
+The reflected radiance is an integral of the BRDF against incoming flux per area --- and the photons are exactly discrete packets of incoming flux. Replacing the continuous flux $\mathrm{d}^2\Phi_i$ by the $k$ packets $\Delta\Phi_j$ found within a disc of radius $r$ around $\mathbf{x}$, and the area $\mathrm{d}A$ by the disc's area, gives the \emph{radiance estimate}
+\begin{equation}
+	\label{eq:photon_gather}
+	L_r(\mathbf{x}, \omega_o) \;\approx\; \sum_{j=1}^{k} f_r(\mathbf{x}, \omega_j, \omega_o) \, \frac{\Delta\Phi_j}{\pi r^2} \,.
+\end{equation}
+The sum over photons stands in for the integral over incoming directions, with the photons' arrival directions $\omega_j$ as the samples; no explicit $\frac{1}{N}$ or sampling density appears because both were already folded into each packet during the light pass. The division by $\pi r^2$ turns gathered flux into flux per area, and the BRDF, evaluated once per photon, is what finally connects each light-side direction $\omega_j$ to the camera-side direction $\omega_o$ --- the gather is the meeting point of the two passes.
+
+\Cref{eq:photon_gather} uses the simplest possible kernel: every photon within distance $r$ counts fully, every photon beyond it not at all. Whatever the kernel, the estimate treats all gathered photons as if they had arrived exactly at $\mathbf{x}$, so any detail of the true illumination finer than $r$ --- the sharp edge of a caustic, a shadow boundary --- is averaged away: the result is \emph{blurred}. This is a different kind of error from Monte Carlo noise: for a fixed radius the estimate is systematically offset, i.e.\ \emph{biased}, no matter how many photons are traced. In exchange, it is far smoother than a path-traced estimate from the same amount of work. The bias is not fatal: the estimator is \emph{consistent}, meaning that as the number of photons grows and the radius shrinks accordingly, the estimate converges to the true value. Biased but smooth versus unbiased but noisy is the essential trade-off between photon mapping and path tracing.
+
+Inside a participating medium the same story repeats. A camera path entering a medium is scattered at random distances into random directions, so reaching a small light by chance is again hopeless --- and \emph{volumetric caustics}, light focused by specular surfaces into shafts inside the medium, suffer both problems at once. The light pass extends naturally: propagation distances are drawn by free-flight sampling (\cref{eq:free_flight}), and a photon is stored at every scattering event inside the medium, forming a volume photon map \cite{jensen98}. The gathered quantity is now the in-scattered radiance $L_s$ of \cref{eq:inscatter}, and the neighborhood becomes a sphere:
+\begin{equation}
+	\label{eq:volume_gather}
+	L_s(\mathbf{x}, \omega) \;\approx\; \frac{1}{\sigma_s} \sum_{j=1}^{k} p(\omega_j, \omega) \, \frac{\Delta\Phi_j}{\tfrac{4}{3}\pi r^3} \,.
+\end{equation}
+The phase function takes the place of the BRDF, the sphere's volume that of the disc's area, and the leading $\frac{1}{\sigma_s}$ compensates for the photons having been stored in proportion to the medium's scattering strength --- it cancels against the $\sigma_s$ that multiplies $L_s$ in \cref{eq:vre}.
+
+Photon mapping thus splits rendering into two passes --- trace flux from the lights and store it, then estimate radiance from the stored density during rendering --- and this two-pass structure is the foundation our method rests on. How the stored representation evolved from points to beams, how the blur can be driven to zero progressively, and how gathering can be replaced by its scatter-side counterpart, splatting, is the subject of \cref{chap:related_work}.
 
 \section{Ray Tracing and Rasterization}
 \label{sec:bg_raster_vs_rt}
